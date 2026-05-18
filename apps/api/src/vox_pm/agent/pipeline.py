@@ -21,6 +21,7 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 
+from vox_pm.agent.llm.factory import build_llm_service
 from vox_pm.agent.prompts import build_system_prompt
 from vox_pm.agent.state import get_state
 from vox_pm.agent.tools import dispatch_tool
@@ -42,14 +43,14 @@ async def _get_context_snapshot(session_id: str) -> str:
     return state.snapshot_text(project_dicts, task_dicts)
 
 
-def _build_tool_handler(session_id: str, context: LLMContext):
+def _make_tool_handler(session_id: str, context: LLMContext):
     async def handle(function_name, tool_call_id, args, llm, ctx, result_callback):
         await publish(session_id, "agent.thinking", {})
         result = await dispatch_tool(function_name, dict(args), session_id)
 
-        # Refresh system prompt with updated workspace snapshot after each tool call
+        # Refresh workspace snapshot in system prompt after each tool call
         snapshot = await _get_context_snapshot(session_id)
-        messages = ctx.messages if ctx else context.messages
+        messages = (ctx or context).messages
         if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
             messages[0]["content"] = build_system_prompt(snapshot)
 
@@ -73,13 +74,13 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
 
     stt = DeepgramSTTService(
         api_key=settings.deepgram_api_key,
-        live_options={
-            "model": "nova-3",
-            "language": "en-US",
-            "smart_format": True,
-            "interim_results": True,
-            "endpointing": 300,
-        },
+        settings=DeepgramSTTService.Settings(
+            model="nova-3",
+            language="en-US",
+            smart_format=True,
+            interim_results=True,
+            endpointing=300,
+        ),
     )
 
     tts = CartesiaTTSService(
@@ -91,22 +92,19 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
     context = LLMContext()
     context.add_message({"role": "system", "content": build_system_prompt(snapshot)})
 
-    llm = _build_llm_service(settings, context, session_id)
+    tool_handler = _make_tool_handler(session_id, context)
+    llm = build_llm_service(context, tool_handler, settings)
 
     context_pair = LLMContextAggregatorPair(
         context,
-        user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),
-        ),
+        user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
     )
-
-    transcript_publisher = _TranscriptPublisher(session_id)
 
     pipeline = Pipeline(
         [
             transport.input(),
             stt,
-            transcript_publisher,
+            _TranscriptPublisher(session_id),
             context_pair.user(),
             llm,
             tts,
@@ -123,40 +121,6 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
 
     runner = PipelineRunner(handle_sigint=False)
     await runner.run(task)
-
-
-def _build_llm_service(settings, context: LLMContext, session_id: str):
-    from vox_pm.agent.tools import TOOL_DEFINITIONS, OPENAI_TOOL_DEFINITIONS
-
-    handler = _build_tool_handler(session_id, context)
-
-    provider = settings.llm_provider
-    if not provider:
-        provider = "anthropic" if settings.anthropic_api_key else "openai"
-
-    if provider == "anthropic":
-        from pipecat.services.anthropic.llm import AnthropicLLMService
-
-        context.set_tools(TOOL_DEFINITIONS)
-        llm = AnthropicLLMService(
-            api_key=settings.anthropic_api_key,
-            model=settings.anthropic_model,
-        )
-        for tool in TOOL_DEFINITIONS:
-            llm.register_function(tool["name"], handler)
-        return llm
-
-    else:
-        from pipecat.services.openai.llm import OpenAILLMService
-
-        context.set_tools(OPENAI_TOOL_DEFINITIONS)
-        llm = OpenAILLMService(
-            api_key=settings.openai_api_key,
-            model=settings.openai_model,
-        )
-        for tool in TOOL_DEFINITIONS:
-            llm.register_function(tool["name"], handler)
-        return llm
 
 
 class _TranscriptPublisher(FrameProcessor):

@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import Any
 
-from sqlmodel.ext.asyncio.session import AsyncSession
+from pipecat.adapters.schemas.function_schema import FunctionSchema
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
 
 from vox_pm.agent.state import EntityRef, SessionState, get_state
 from vox_pm.db import get_session_factory
@@ -12,7 +13,7 @@ from vox_pm.services import projects as project_svc
 from vox_pm.services import tasks as task_svc
 
 
-# Anthropic-format tool definitions
+# Legacy dict format kept for register_function() name iteration only
 TOOL_DEFINITIONS = [
     {
         "name": "create_project",
@@ -93,7 +94,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "task_id": {"type": "string"},
-                "project_id": {"type": ["string", "null"]},
+                "project_id": {"type": "string"},
             },
             "required": ["task_id"],
         },
@@ -125,18 +126,18 @@ TOOL_DEFINITIONS = [
     },
 ]
 
-# OpenAI function-call format (for OpenAI provider)
-OPENAI_TOOL_DEFINITIONS = [
-    {
-        "type": "function",
-        "function": {
-            "name": t["name"],
-            "description": t["description"],
-            "parameters": t["input_schema"],
-        },
-    }
-    for t in TOOL_DEFINITIONS
-]
+# ToolsSchema used by all LLM providers (Pipecat 1.2+)
+TOOLS_SCHEMA = ToolsSchema(
+    standard_tools=[
+        FunctionSchema(
+            name=t["name"],
+            description=t["description"],
+            properties=t["input_schema"]["properties"],
+            required=t["input_schema"].get("required", []),
+        )
+        for t in TOOL_DEFINITIONS
+    ]
+)
 
 
 def _parse_dt(val: str | None) -> datetime | None:

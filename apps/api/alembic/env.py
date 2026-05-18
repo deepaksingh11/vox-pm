@@ -4,7 +4,6 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy.ext.asyncio import create_async_engine
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -18,9 +17,9 @@ if config.config_file_name is not None:
 target_metadata = SQLModel.metadata
 
 
-def get_url() -> str:
-    from vox_pm.config import get_settings
-    return get_settings().database_url
+def get_engine():
+    from vox_pm.db import _build_engine
+    return _build_engine()
 
 
 def run_migrations_offline() -> None:
@@ -31,7 +30,7 @@ def run_migrations_offline() -> None:
 
 
 async def run_migrations_online() -> None:
-    connectable = create_async_engine(get_url())
+    connectable = get_engine()
     async with connectable.connect() as connection:
         await connection.run_sync(
             lambda sync_conn: context.configure(

@@ -1,4 +1,4 @@
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, ChevronRight } from "lucide-react";
 import type { Project, Task } from "../lib/types";
 import { TaskRow } from "./TaskRow";
 
@@ -12,17 +12,30 @@ export function ProjectCard({ project, tasks }: Props) {
   const done = tasks.filter((t) => t.status === "done");
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-800">
-        <FolderOpen size={16} className="text-brand-500 shrink-0" />
-        <h2 className="font-semibold text-slate-100 truncate flex-1">{project.title}</h2>
-        <span className="text-xs text-slate-500 shrink-0">
-          {open.length} open{done.length > 0 ? ` · ${done.length} done` : ""}
-        </span>
+    <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all" style={{ animation: "fade-in 0.2s ease-out" }}>
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/40">
+        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <FolderOpen size={14} className="text-primary" />
+        </div>
+        <h2 className="font-semibold text-foreground truncate flex-1 text-sm">{project.title}</h2>
+        <div className="flex items-center gap-2 shrink-0">
+          {open.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+              {open.length} open
+            </span>
+          )}
+          {done.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+              {done.length} done
+            </span>
+          )}
+          <ChevronRight size={14} className="text-muted-foreground/40" />
+        </div>
       </div>
-      <div className="py-1">
+
+      <div className="divide-y divide-border/50">
         {tasks.length === 0 ? (
-          <p className="text-xs text-slate-600 px-4 py-3">No tasks yet</p>
+          <p className="text-xs text-muted-foreground/60 px-4 py-4 text-center">No tasks yet</p>
         ) : (
           tasks.map((t, i) => <TaskRow key={t.id} task={t} index={i} />)
         )}

@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "pipecat-ai[daily,deepgram,cartesia,anthropic,openai]>=0.0.60",
+    "pipecat-ai[anthropic,cartesia,daily,deepgram,google,openai]>=0.0.60",
     "sqlmodel>=0.0.22",
     "asyncpg>=0.30",
     "alembic>=1.14",

@@ -1,4 +1,4 @@
-import { Mic, Phone, PhoneOff, Loader2 } from "lucide-react";
+import { Mic, PhoneOff, Loader2, Radio } from "lucide-react";
 import type { VoiceSessionStatus } from "../lib/types";
 import { cn } from "../lib/utils";
 
@@ -11,37 +11,37 @@ interface Props {
 }
 
 const statusLabel: Record<VoiceSessionStatus, string> = {
-  idle: "Start session",
-  connecting: "Connecting…",
-  active: "Active",
-  error: "Error",
+  idle:          "Start session",
+  connecting:    "Connecting…",
+  active:        "End session",
+  error:         "Retry",
   disconnecting: "Disconnecting…",
 };
 
 export function VoiceControl({ status, onStart, onStop, onToggleMic, error }: Props) {
   const isActive = status === "active";
-  const isBusy = status === "connecting" || status === "disconnecting";
+  const isBusy   = status === "connecting" || status === "disconnecting";
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="flex items-center gap-3">
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
         <button
           onClick={isActive ? onStop : onStart}
           disabled={isBusy}
           className={cn(
-            "flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-all",
+            "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-sm",
             isActive
-              ? "bg-red-600 hover:bg-red-700 text-white"
-              : "bg-brand-500 hover:bg-brand-600 text-white",
+              ? "bg-destructive text-white hover:bg-destructive/90"
+              : "bg-primary text-primary-foreground hover:bg-primary/90",
             isBusy && "opacity-50 cursor-not-allowed"
           )}
         >
           {isBusy ? (
-            <Loader2 size={16} className="animate-spin" />
+            <Loader2 size={15} className="animate-spin" />
           ) : isActive ? (
-            <PhoneOff size={16} />
+            <PhoneOff size={15} />
           ) : (
-            <Phone size={16} />
+            <Radio size={15} />
           )}
           {statusLabel[status]}
         </button>
@@ -49,24 +49,24 @@ export function VoiceControl({ status, onStart, onStop, onToggleMic, error }: Pr
         {isActive && (
           <button
             onClick={onToggleMic}
-            className="p-2.5 rounded-full bg-slate-700 hover:bg-slate-600 transition-colors"
+            className="p-2.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-colors"
             title="Toggle mic"
           >
-            <Mic size={16} />
+            <Mic size={15} />
           </button>
         )}
       </div>
 
-      {/* Pulse ring when active */}
       {isActive && (
-        <div className="flex items-center gap-1.5">
-          {[0, 1, 2, 3, 4].map((i) => (
+        <div className="flex items-center justify-center gap-1 h-6">
+          {[0.4, 0.7, 1, 0.7, 0.9, 0.5, 0.8, 0.6, 1, 0.4].map((scale, i) => (
             <div
               key={i}
-              className="w-1 bg-brand-500 rounded-full animate-pulse"
+              className="w-1 rounded-full bg-primary"
               style={{
-                height: `${8 + Math.abs(2 - i) * 6}px`,
-                animationDelay: `${i * 0.1}s`,
+                height: `${scale * 20}px`,
+                animation: "bar-bounce 1s ease-in-out infinite",
+                animationDelay: `${i * 0.08}s`,
               }}
             />
           ))}
@@ -74,7 +74,7 @@ export function VoiceControl({ status, onStart, onStop, onToggleMic, error }: Pr
       )}
 
       {error && (
-        <p className="text-xs text-red-400 max-w-xs text-center">{error}</p>
+        <p className="text-xs text-destructive text-center">{error}</p>
       )}
     </div>
   );

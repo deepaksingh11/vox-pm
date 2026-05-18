@@ -2,30 +2,33 @@ import { MessageCircleQuestion, X } from "lucide-react";
 import { useStore } from "../hooks/useStore";
 
 export function ClarificationPrompt() {
-  const clarification = useStore((s) => s.clarification);
+  const clarification      = useStore((s) => s.clarification);
   const clearClarification = useStore((s) => s.clearClarification);
 
   if (!clarification) return null;
 
   return (
-    <div className="bg-purple-950/80 border border-purple-700 rounded-xl px-4 py-3 flex items-start gap-3">
-      <MessageCircleQuestion size={18} className="text-purple-400 shrink-0 mt-0.5" />
-      <div className="flex-1">
-        <p className="text-sm text-purple-100 font-medium">{clarification.question}</p>
+    <div className="bg-accent border border-border rounded-xl px-4 py-3 flex items-start gap-3" style={{ animation: "fade-in 0.2s ease-out" }}>
+      <MessageCircleQuestion size={16} className="text-primary shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-accent-foreground">{clarification.question}</p>
         {clarification.candidates.length > 0 && (
-          <ul className="mt-1.5 space-y-1">
+          <ul className="mt-2 space-y-1">
             {clarification.candidates.map((c, i) => (
-              <li key={i} className="text-xs text-purple-300">
-                • {c}
+              <li key={i} className="text-xs text-accent-foreground/80 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                  {i + 1}
+                </span>
+                {c}
               </li>
             ))}
           </ul>
         )}
-        <p className="text-xs text-purple-500 mt-2">Speak your answer to continue</p>
+        <p className="text-[11px] text-muted-foreground mt-2">Speak your answer to continue</p>
       </div>
       <button
         onClick={clearClarification}
-        className="text-purple-600 hover:text-purple-400"
+        className="text-muted-foreground hover:text-foreground transition-colors"
       >
         <X size={14} />
       </button>

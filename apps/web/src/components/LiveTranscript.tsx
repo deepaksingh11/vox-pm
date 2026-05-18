@@ -1,28 +1,28 @@
 import { useStore } from "../hooks/useStore";
 
 export function LiveTranscript() {
-  const partial = useStore((s) => s.partialTranscript);
-  const final = useStore((s) => s.finalTranscript);
+  const partial  = useStore((s) => s.partialTranscript);
+  const final    = useStore((s) => s.finalTranscript);
   const thinking = useStore((s) => s.agentThinking);
 
   if (!partial && !final && !thinking) return null;
 
   return (
-    <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-sm min-h-[52px]">
+    <div className="bg-muted/60 border border-border rounded-xl px-4 py-3 text-sm min-h-[52px] space-y-1">
       {final && (
-        <p className="text-slate-200 leading-relaxed">
-          <span className="text-slate-500 text-xs mr-1">you:</span>
+        <p className="text-foreground leading-relaxed">
+          <span className="text-muted-foreground text-xs font-medium mr-1.5">you</span>
           {final}
         </p>
       )}
       {partial && (
-        <p className="text-slate-400 italic leading-relaxed">
-          <span className="text-slate-500 text-xs mr-1">…</span>
+        <p className="text-muted-foreground italic leading-relaxed">
+          <span className="text-muted-foreground/60 text-xs mr-1.5">…</span>
           {partial}
         </p>
       )}
       {thinking && !partial && (
-        <p className="text-brand-500 text-xs animate-pulse">Agent processing…</p>
+        <p className="text-primary text-xs font-medium animate-pulse">Agent processing…</p>
       )}
     </div>
   );

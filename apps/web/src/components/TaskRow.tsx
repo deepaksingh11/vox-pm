@@ -14,48 +14,55 @@ export function TaskRow({ task, index }: Props) {
   return (
     <div
       className={cn(
-        "flex items-start gap-3 px-3 py-2.5 rounded-lg transition-colors",
-        "hover:bg-slate-800/50 group",
-        isDone && "opacity-50"
+        "flex items-start gap-3 px-4 py-3 transition-colors group hover:bg-muted/50",
+        isDone && "opacity-60"
       )}
     >
       <div className="shrink-0 mt-0.5">
         {isDone ? (
           <CheckCircle2 size={15} className="text-emerald-500" />
         ) : (
-          <Circle size={15} className="text-slate-600" />
+          <Circle size={15} className="text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors" />
         )}
       </div>
+
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-slate-600 font-mono">[{index}]</span>
-          <span className={cn("text-sm", isDone ? "line-through text-slate-500" : "text-slate-200")}>
+          <span className="text-[10px] text-muted-foreground/40 font-mono tabular-nums">{index}</span>
+          <span className={cn(
+            "text-sm font-medium",
+            isDone ? "line-through text-muted-foreground" : "text-foreground"
+          )}>
             {task.title}
           </span>
           {task.urgent && (
-            <span className="flex items-center gap-0.5 text-xs text-red-400 font-medium">
-              <AlertCircle size={10} />
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full">
+              <AlertCircle size={9} />
               urgent
             </span>
           )}
         </div>
+
         {task.description && (
-          <p className="text-xs text-slate-500 mt-0.5 truncate">{task.description}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">{task.description}</p>
         )}
-        <div className="flex items-center gap-3 mt-1">
-          {task.due_at && (
-            <span className="flex items-center gap-1 text-xs text-slate-500">
-              <Calendar size={10} />
-              {format(new Date(task.due_at), "MMM d")}
-            </span>
-          )}
-          {task.reminder_at && (
-            <span className="flex items-center gap-1 text-xs text-slate-500">
-              <Bell size={10} />
-              {format(new Date(task.reminder_at), "MMM d, h:mma")}
-            </span>
-          )}
-        </div>
+
+        {(task.due_at || task.reminder_at) && (
+          <div className="flex items-center gap-3 mt-1.5">
+            {task.due_at && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Calendar size={10} />
+                {format(new Date(task.due_at), "MMM d")}
+              </span>
+            )}
+            {task.reminder_at && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Bell size={10} />
+                {format(new Date(task.reminder_at), "MMM d, h:mma")}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,21 +5,23 @@ import { TaskRow } from "./TaskRow";
 
 export function ProjectList() {
   const projects = useStore((s) => s.projects);
-  const tasks = useStore((s) => s.tasks);
-
+  const tasks    = useStore((s) => s.tasks);
   const orphanTasks = tasks.filter((t) => !t.project_id);
 
   if (projects.length === 0 && orphanTasks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-slate-600">
-        <Inbox size={40} className="mb-3 opacity-30" />
-        <p className="text-sm">No projects yet — start talking</p>
+      <div className="flex flex-col items-center justify-center h-72 text-muted-foreground/40">
+        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+          <Inbox size={28} className="opacity-50" />
+        </div>
+        <p className="text-sm font-medium text-muted-foreground">No projects yet</p>
+        <p className="text-xs text-muted-foreground/60 mt-1">Start a session and speak to create tasks</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-3xl">
       {projects.map((p) => (
         <ProjectCard
           key={p.id}
@@ -31,13 +33,17 @@ export function ProjectList() {
       ))}
 
       {orphanTasks.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-800">
-            <Inbox size={16} className="text-slate-500 shrink-0" />
-            <h2 className="font-semibold text-slate-400">Unassigned</h2>
-            <span className="text-xs text-slate-500 ml-auto">{orphanTasks.length}</span>
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/40">
+            <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
+              <Inbox size={14} className="text-muted-foreground" />
+            </div>
+            <h2 className="font-semibold text-muted-foreground text-sm flex-1">Unassigned</h2>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+              {orphanTasks.length}
+            </span>
           </div>
-          <div className="py-1">
+          <div className="divide-y divide-border/50">
             {orphanTasks.map((t, i) => (
               <TaskRow key={t.id} task={t} index={i} />
             ))}

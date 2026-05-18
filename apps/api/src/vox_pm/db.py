@@ -10,15 +10,27 @@ _engine = None
 _session_factory = None
 
 
+def _build_engine():
+    settings = get_settings()
+    url = settings.database_url
+    # asyncpg doesn't accept sslmode/channel_binding as URL params — strip and pass via connect_args
+    connect_args = {}
+    for param in ("sslmode=require", "channel_binding=require"):
+        url = url.replace(f"?{param}", "").replace(f"&{param}", "")
+    if "neon.tech" in url or "sslmode" in settings.database_url:
+        connect_args["ssl"] = True
+    return create_async_engine(
+        url,
+        echo=settings.environment == "development",
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
+
+
 def get_engine():
     global _engine
     if _engine is None:
-        settings = get_settings()
-        _engine = create_async_engine(
-            settings.database_url,
-            echo=settings.environment == "development",
-            pool_pre_ping=True,
-        )
+        _engine = _build_engine()
     return _engine
 
 

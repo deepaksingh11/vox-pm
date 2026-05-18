@@ -5,6 +5,13 @@
     <link rel="icon" type="image/svg+xml" href="/vox.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vox PM</title>
+    <script>
+      (function () {
+        var t = localStorage.getItem("vox-pm-theme") ?? "system";
+        var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
