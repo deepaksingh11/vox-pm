@@ -1,10 +1,10 @@
 from datetime import UTC, datetime
 
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select
+from sqlmodel import select, update
 
 from vox_pm.events.bus import publish
-from vox_pm.models import Project
+from vox_pm.models import Project, Task
 from vox_pm.schemas import ProjectRead
 
 
@@ -64,6 +64,7 @@ async def delete_project(
     project = await session.get(Project, project_id)
     if not project:
         return False
+    await session.exec(update(Task).where(Task.project_id == project_id).values(project_id=None))
     await session.delete(project)
     await session.commit()
     await publish(session_id, "project.deleted", {"id": project_id})

@@ -9,6 +9,7 @@ export function useEventStream(
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const onEventRef = useRef(onEvent);
+  const activeRef = useRef(false); // false = cleanup ran, stop reconnecting
   onEventRef.current = onEvent;
 
   const connect = useCallback((sid: string) => {
@@ -28,17 +29,18 @@ export function useEventStream(
 
     ws.onerror = () => ws.close();
     ws.onclose = () => {
-      // reconnect if session still active
-      if (wsRef.current === ws) {
-        setTimeout(() => connect(sid), 2000);
+      if (activeRef.current) {
+        setTimeout(() => { if (activeRef.current) connect(sid); }, 2000);
       }
     };
   }, []);
 
   useEffect(() => {
     if (!sessionId) return;
+    activeRef.current = true;
     connect(sessionId);
     return () => {
+      activeRef.current = false;
       const ws = wsRef.current;
       wsRef.current = null;
       ws?.close();

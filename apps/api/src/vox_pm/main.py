@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from vox_pm.config import get_settings
-from vox_pm.db import create_tables
+from vox_pm.db import create_tables, get_session_factory
 from vox_pm.routers import projects, tasks, voice
 from vox_pm.events.ws import router as ws_router
 
@@ -19,6 +19,11 @@ async def lifespan(app: FastAPI):
     global _started_at
     _started_at = time.time()
     await create_tables()
+    # warm up connection pool — prevents cold-start lag on first tool call
+    async with get_session_factory()() as db:
+        await db.exec(  # type: ignore[attr-defined]
+            __import__("sqlalchemy", fromlist=["text"]).text("SELECT 1")
+        )
     print("\n\033[36m[api]\033[0m  API ready", flush=True)
     print("\033[36m[api]\033[0m  http://localhost:8000", flush=True)
     print("\033[36m[api]\033[0m  http://localhost:8000/docs  (Swagger)\n", flush=True)

@@ -70,8 +70,15 @@ export const useStore = create<Store>((set, get) => ({
   selectedProjectId: null,
 
   loadInitialState: async () => {
-    const [projects, tasks] = await Promise.all([api.projects.list(), api.tasks.list()]);
-    set({ projects, tasks });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const [projects, tasks] = await Promise.all([api.projects.list(), api.tasks.list()]);
+        set({ projects, tasks });
+        return;
+      } catch {
+        if (attempt < 4) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+      }
+    }
   },
 
   setSelectedProject: (id) => set({ selectedProjectId: id }),
@@ -116,10 +123,10 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   applyEvent: (event) => {
+    if (event.type === "ping") return;
+
     const state = get();
     set({ debugEvents: [...state.debugEvents, event].slice(-100) });
-
-    if (event.type === "ping") return;
 
     switch (event.type) {
       case "transcript.partial":

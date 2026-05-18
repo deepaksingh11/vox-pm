@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { RenameDialog } from "./RenameDialog";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 
 export function Sidebar() {
   const projects = useStore((s) => s.projects);
@@ -25,13 +26,9 @@ export function Sidebar() {
   const createProject = useStore((s) => s.createProject);
 
   const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState("");
-
-  function handleDelete(id: string, title: string) {
-    if (!window.confirm(`Delete project "${title}"?`)) return;
-    deleteProject(id);
-  }
 
   async function handleCreateSubmit() {
     await createProject(draft);
@@ -72,20 +69,30 @@ export function Sidebar() {
             </button>
           </TooltipTrigger>
           <TooltipContent side="right">
-            Voice is faster — try saying "create a project called…"
+            Voice is faster — try saying "create a project…"
           </TooltipContent>
         </Tooltip>
       )}
 
       {/* Projects section */}
-      <div className="mt-5 mb-1.5 mx-4 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-        Projects
+      <div className="mt-5 mb-2 mx-3 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">
+          Projects
+        </span>
+        {projects.length > 0 && (
+          <span className="text-[10px] font-semibold tabular-nums text-muted-foreground/40">
+            {projects.length}
+          </span>
+        )}
       </div>
 
       {projects.length === 0 ? (
-        <p className="mx-4 text-xs text-muted-foreground/50 py-2 leading-relaxed">
-          Hold the mic and say <span className="text-foreground/70">"create a project called…"</span>
-        </p>
+        <div className="mx-3 mt-1 rounded-lg border border-dashed border-border/50 px-3 py-4 flex flex-col items-center gap-2 text-center">
+          <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
+            Hold the mic and say{" "}
+            <span className="font-medium text-foreground/60">"create a project…"</span>
+          </p>
+        </div>
       ) : (
         projects.map((project) => {
           const openCount = tasks.filter(
@@ -138,7 +145,7 @@ export function Sidebar() {
                       className="text-destructive focus:text-destructive"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDelete(project.id, project.title);
+                        setDeleteTarget({ id: project.id, title: project.title });
                       }}
                     >
                       Delete
@@ -156,6 +163,14 @@ export function Sidebar() {
           projectId={renameTarget.id}
           currentTitle={renameTarget.title}
           onClose={() => setRenameTarget(null)}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          title="Delete project"
+          description={`"${deleteTarget.title}" and all its tasks will be unlinked. This cannot be undone.`}
+          onConfirm={() => deleteProject(deleteTarget.id)}
+          onClose={() => setDeleteTarget(null)}
         />
       )}
     </nav>

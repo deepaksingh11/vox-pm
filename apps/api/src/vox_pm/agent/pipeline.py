@@ -98,6 +98,7 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
             model="nova-3",
             language="en-US",
             smart_format=True,
+            numerals=True,
             interim_results=True,
             endpointing=300,
         ),

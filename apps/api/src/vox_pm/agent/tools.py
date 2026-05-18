@@ -203,7 +203,9 @@ async def dispatch_tool(
                 return {"ok": True, "id": result.id, "title": result.title}
 
             case "update_task":
-                task_id = args.pop("id")
+                task_id = args.pop("id", None)
+                if not task_id:
+                    return {"ok": False, "error": "id required"}
                 if "due_at" in args:
                     args["due_at"] = _parse_dt(args["due_at"])
                 if "reminder_at" in args:
@@ -230,11 +232,14 @@ async def dispatch_tool(
                 return {"ok": result is not None}
 
             case "convert_task_to_project":
-                task = await task_svc.get_task(db, args["task_id"])
+                task_id_raw = args.get("task_id")
+                if not task_id_raw:
+                    return {"ok": False, "error": "task_id required"}
+                task = await task_svc.get_task(db, task_id_raw)
                 if not task:
                     return {"ok": False, "error": "task not found"}
                 title = task.title
-                await task_svc.delete_task(db, args["task_id"], session_id)
+                await task_svc.delete_task(db, task_id_raw, session_id)
                 result = await project_svc.create_project(db, title, session_id)
                 state.touch(EntityRef(id=result.id, title=result.title, kind="project"))
                 return {"ok": True, "id": result.id, "title": result.title}

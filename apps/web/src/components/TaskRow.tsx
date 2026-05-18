@@ -1,5 +1,11 @@
 import { AlertCircle, Calendar, Bell, MoreHorizontal } from "lucide-react";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
+
+function safeFormat(val: string | null | undefined, fmt: string): string | null {
+  if (!val) return null;
+  const d = new Date(val);
+  return isValid(d) ? format(d, fmt) : null;
+}
 import type { Task } from "../lib/types";
 import { cn } from "../lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -55,16 +61,16 @@ export function TaskRow({ task, index: _index }: Props) {
 
         {(task.due_at || task.reminder_at) && (
           <div className="flex items-center gap-3 mt-1.5">
-            {task.due_at && (
+            {task.due_at && safeFormat(task.due_at, "dd MMM yyyy") && (
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Calendar size={10} />
-                {format(new Date(task.due_at), "dd MMM yyyy")}
+                {safeFormat(task.due_at, "dd MMM yyyy")}
               </span>
             )}
-            {task.reminder_at && (
+            {task.reminder_at && safeFormat(task.reminder_at, "dd MMM yyyy, h:mma") && (
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Bell size={10} />
-                {format(new Date(task.reminder_at), "dd MMM yyyy, h:mma")}
+                {safeFormat(task.reminder_at, "dd MMM yyyy, h:mma")}
               </span>
             )}
           </div>

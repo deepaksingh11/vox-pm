@@ -1,11 +1,28 @@
 import { useState } from "react";
 import { useStore } from "../hooks/useStore";
 
+function isDebugEnabled() {
+  return (
+    new URLSearchParams(window.location.search).get("debug") === "1" ||
+    localStorage.getItem("vox-debug") === "1"
+  );
+}
+
+export function useDebugEnabled() {
+  const [enabled, setEnabled] = useState(isDebugEnabled);
+  function toggle() {
+    const next = !enabled;
+    localStorage.setItem("vox-debug", next ? "1" : "0");
+    setEnabled(next);
+  }
+  return { enabled, toggle };
+}
+
 export function DebugPanel() {
   const [open, setOpen] = useState(false);
   const debugEvents = useStore((s) => s.debugEvents);
 
-  if (new URLSearchParams(window.location.search).get("debug") !== "1") return null;
+  if (!isDebugEnabled()) return null;
 
   return (
     <div className="border-t border-border">
@@ -24,11 +41,11 @@ export function DebugPanel() {
             [...debugEvents].reverse().map((e, i) => (
               <div key={i} className="leading-relaxed">
                 <span className="text-muted-foreground/50">
-                  {new Date(e.ts).toISOString().slice(11, 23)}
+                  {(() => { try { return new Date(e.ts).toISOString().slice(11, 23); } catch { return e.ts?.slice(0,12) ?? ""; } })()}
                 </span>{" "}
                 <span className="text-primary font-semibold">[{e.type}]</span>{" "}
                 <span className="text-muted-foreground">
-                  {JSON.stringify(e.data).slice(0, 120)}
+                  {(JSON.stringify(e.data) ?? "").slice(0, 120)}
                 </span>
               </div>
             ))

@@ -28,7 +28,7 @@ function ActionItem({ action }: { action: ActionEntry }) {
         <p className="text-xs font-medium text-muted-foreground">{cfg?.label ?? action.type}</p>
         <p className="text-sm text-foreground truncate mt-0.5">{action.summary}</p>
         <p className="text-[11px] text-muted-foreground/60 mt-0.5">
-          {formatDistanceToNow(new Date(action.ts), { addSuffix: true })}
+          {(() => { try { return formatDistanceToNow(new Date(action.ts), { addSuffix: true }); } catch { return ""; } })()}
         </p>
       </div>
     </li>
@@ -39,23 +39,21 @@ export function ActionFeed() {
   const actions = useStore((s) => s.actions);
 
   return (
-    <div className="h-full flex flex-col">
-      <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+    <div className="flex flex-col">
+      <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 sticky top-0 bg-card py-1">
         Agent Actions
       </h3>
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {actions.length === 0 ? (
-          <div className="flex items-center justify-center h-32">
-            <p className="text-xs text-muted-foreground/50 text-center">Actions appear here as the agent works</p>
-          </div>
-        ) : (
-          <ul>
-            {actions.map((a) => (
-              <ActionItem key={a.id} action={a} />
-            ))}
-          </ul>
-        )}
-      </div>
+      {actions.length === 0 ? (
+        <div className="flex items-center justify-center h-32">
+          <p className="text-xs text-muted-foreground/50 text-center">Actions appear here as the agent works</p>
+        </div>
+      ) : (
+        <ul>
+          {actions.map((a) => (
+            <ActionItem key={a.id} action={a} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

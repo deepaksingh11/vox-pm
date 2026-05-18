@@ -1,6 +1,12 @@
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, Mic, Zap, Clock, Brain } from "lucide-react";
 import { useStore } from "../hooks/useStore";
 import { TaskRow } from "./TaskRow";
+
+const VOICE_FACTS = [
+  { icon: Zap, stat: "3×", label: "faster than typing", sub: "Stanford, 2016" },
+  { icon: Clock, stat: "67 hrs", label: "saved per year", sub: "vs keyboard at 1k words/day" },
+  { icon: Brain, stat: "20%", label: "fewer errors", sub: "voice vs typed input" },
+];
 
 export function TaskPane() {
   const projects = useStore((s) => s.projects);
@@ -10,14 +16,37 @@ export function TaskPane() {
   if (!selectedProjectId) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center px-6">
-          <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <FolderOpen size={20} className="text-primary" />
+        <div className="text-center px-6 max-w-lg w-full">
+          {/* Icon */}
+          <div className="mx-auto mb-5 w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Mic size={26} className="text-primary" />
           </div>
-          <p className="text-sm font-semibold text-foreground">Select a project</p>
-          <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-            Or hold the mic and say <em>"add a task to…"</em> — Vox PM creates the project if needed.
+
+          <h2 className="text-base font-semibold text-foreground mb-1">Voice beats the keyboard</h2>
+          <p className="text-xs text-muted-foreground mb-8 max-w-xs mx-auto">
+            Say <em className="text-foreground/80 not-italic font-medium">"add a task to…"</em> — Vox PM picks the project or creates one on the fly.
           </p>
+
+          {/* Stat cards */}
+          <div className="grid grid-cols-3 gap-3 mb-8">
+            {VOICE_FACTS.map(({ icon: Icon, stat, label, sub }) => (
+              <div
+                key={stat}
+                className="rounded-xl border border-border/60 bg-card/60 px-3 py-3.5 flex flex-col items-center gap-1 hover:border-primary/30 hover:bg-primary/5 transition-colors"
+              >
+                <Icon size={14} className="text-primary/70 mb-0.5" />
+                <span className="text-lg font-bold text-foreground leading-none">{stat}</span>
+                <span className="text-[10px] font-medium text-foreground/70 text-center leading-tight">{label}</span>
+                <span className="text-[9px] text-muted-foreground/50 text-center leading-tight">{sub}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* CTA hint */}
+          <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-primary/8 border border-primary/15 text-xs text-muted-foreground">
+            <Mic size={11} className="text-primary" />
+            Hold mic · Speak · Done
+          </div>
         </div>
       </div>
     );

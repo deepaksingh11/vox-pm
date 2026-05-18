@@ -9,15 +9,16 @@ import { ActionFeed } from "./components/ActionFeed";
 import { Sidebar } from "./components/Sidebar";
 import { TaskPane } from "./components/TaskPane";
 import { ClarificationPrompt } from "./components/ClarificationPrompt";
-import { DebugPanel } from "./components/DebugPanel";
+import { DebugPanel, useDebugEnabled } from "./components/DebugPanel";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import imgUrl from "/vox.svg";
 
 export default function App() {
   const { status, sessionId, error, muted, start, stop, toggleMic } = usePipecatSession();
   const { loadInitialState, applyEvent } = useStore();
   const { theme, setTheme } = useTheme();
+  const { enabled: debugEnabled, toggle: toggleDebug } = useDebugEnabled();
 
   useEffect(() => {
     void loadInitialState();
@@ -27,12 +28,29 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-screen bg-background flex flex-col overflow-hidden">
         <header className="sticky top-0 z-10 backdrop-blur-md bg-background/80 border-b border-border px-4 py-2.5 flex items-center gap-3">
           <div className="flex items-center gap-2.5 flex-1">
             <img src={imgUrl} alt="Vox PM" className="w-7 h-7" />
             <h1 className="text-base font-bold text-foreground tracking-tight">Vox PM</h1>
           </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={toggleDebug}
+                className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors text-xs font-bold ${
+                  debugEnabled
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                D
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {debugEnabled ? "Hide debug events panel" : "Show debug events panel — raw WebSocket events"}
+            </TooltipContent>
+          </Tooltip>
           <ThemeToggle theme={theme} onSetTheme={setTheme} />
         </header>
 
@@ -48,8 +66,8 @@ export default function App() {
           </main>
 
           {/* Right sidebar — voice + agent actions */}
-          <aside className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border bg-card shrink-0">
-            <div className="p-4 border-b border-border space-y-3">
+          <aside className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border bg-card shrink-0 overflow-hidden">
+            <div className="shrink-0 p-4 border-b border-border space-y-3">
               <VoiceControl
                 status={status}
                 isMuted={muted}
@@ -62,10 +80,13 @@ export default function App() {
               <ClarificationPrompt />
             </div>
 
-            <div className="flex-1 overflow-hidden p-4">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-4">
               <ActionFeed />
             </div>
-            <DebugPanel />
+
+            <div className="shrink-0">
+              <DebugPanel />
+            </div>
           </aside>
         </div>
       </div>

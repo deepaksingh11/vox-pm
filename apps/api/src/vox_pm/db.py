@@ -21,8 +21,10 @@ def _build_engine():
         connect_args["ssl"] = True
     return create_async_engine(
         url,
-        echo=settings.environment == "development",
-        pool_pre_ping=True,
+        echo=False,
+        pool_size=10,
+        max_overflow=5,
+        pool_timeout=10,
         connect_args=connect_args,
     )
 
