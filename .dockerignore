@@ -1,0 +1,9 @@
+node_modules
+.pnpm-store
+apps/web/dist
+apps/api/.venv
+apps/api/__pycache__
+**/__pycache__
+**/*.pyc
+.git
+*.md

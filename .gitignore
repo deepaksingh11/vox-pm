@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+**/node_modules/
+apps/web/dist/
+.pnpm-store/
+.pnpm-debug.log*
+.pnpm/
+
+# Build / lock artifacts
+apps/api/uv.lock
+*.lock
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Markdown docs
+*.md

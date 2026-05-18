@@ -1,0 +1,20 @@
+{
+  "name": "vox-pm",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "cd apps/api && uv run uvicorn vox_pm.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:web": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "check": "concurrently -n py,ts -c cyan,magenta \"pnpm check:py\" \"pnpm check:ts\"",
+    "check:py": "cd apps/api && uv run ruff check src && uv run mypy src",
+    "check:ts": "pnpm --filter web typecheck && pnpm --filter web lint",
+    "test": "cd apps/api && uv run pytest",
+    "db:migrate": "cd apps/api && uv run alembic upgrade head",
+    "db:revision": "cd apps/api && uv run alembic revision --autogenerate -m",
+    "install:api": "cd apps/api && uv sync"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
