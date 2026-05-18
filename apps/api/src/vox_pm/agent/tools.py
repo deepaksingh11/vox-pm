@@ -144,7 +144,7 @@ def _parse_dt(val: str | None) -> datetime | None:
     if not val:
         return None
     try:
-        return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        return datetime.fromisoformat(val.replace("Z", "+00:00")).replace(tzinfo=None)
     except ValueError:
         return None
 
@@ -156,6 +156,12 @@ async def dispatch_tool(
 ) -> dict[str, Any]:
     """Execute a tool call. Returns result dict for LLM context."""
     state = get_state(session_id)
+
+    # Resolve short aliases (P1, T3, …) → full UUIDs in any id field
+    for key in ("id", "task_id", "project_id"):
+        if key in args and isinstance(args[key], str):
+            args[key] = state.resolve_id(args[key])
+
     factory = get_session_factory()
 
     async with factory() as db:

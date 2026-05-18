@@ -73,7 +73,7 @@ async def update_task(
         if value is not None and hasattr(task, field):
             setattr(task, field, value)
             changed.append(field)
-    task.updated_at = datetime.now(UTC)
+    task.updated_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(task)
     await session.commit()
     await session.refresh(task)
@@ -98,7 +98,7 @@ async def move_task(
     from_project_id = task.project_id
     task.project_id = project_id
     task.position = await _next_position(session, project_id)
-    task.updated_at = datetime.now(UTC)
+    task.updated_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(task)
     await session.commit()
     await session.refresh(task)

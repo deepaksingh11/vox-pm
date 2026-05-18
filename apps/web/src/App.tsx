@@ -7,12 +7,13 @@ import { useTheme } from "./hooks/useTheme";
 import { VoiceControl } from "./components/VoiceControl";
 import { LiveTranscript } from "./components/LiveTranscript";
 import { ActionFeed } from "./components/ActionFeed";
+import { DebugPanel } from "./components/DebugPanel";
 import { ProjectList } from "./components/ProjectList";
 import { ClarificationPrompt } from "./components/ClarificationPrompt";
 import { ThemeToggle } from "./components/ThemeToggle";
 
 export default function App() {
-  const { status, sessionId, error, start, stop, toggleMic } = usePipecatSession();
+  const { status, sessionId, error, muted, start, stop, toggleMic } = usePipecatSession();
   const { loadInitialState, applyEvent } = useStore();
   const { theme, setTheme } = useTheme();
 
@@ -44,6 +45,7 @@ export default function App() {
           <div className="p-5 border-b border-border space-y-3">
             <VoiceControl
               status={status}
+              isMuted={muted}
               onStart={start}
               onStop={stop}
               onToggleMic={toggleMic}
@@ -56,6 +58,7 @@ export default function App() {
           <div className="flex-1 overflow-hidden p-4">
             <ActionFeed />
           </div>
+          <DebugPanel />
         </aside>
       </div>
     </div>

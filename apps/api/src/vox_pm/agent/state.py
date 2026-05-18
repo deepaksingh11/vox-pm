@@ -18,10 +18,10 @@ class EntityRef:
 @dataclass
 class SessionState:
     session_id: str
-    # rolling window of recently touched entities (newest last)
     recent: list[EntityRef] = field(default_factory=list)
-    # last explicitly focused project (e.g. "under it add three tasks")
     current_project_id: str | None = None
+    # short alias → full UUID (e.g. "P1" → "550e8400-...")
+    _alias_map: dict[str, str] = field(default_factory=dict)
 
     _max_recent: int = 20
 
@@ -35,6 +35,10 @@ class SessionState:
         elif ref.project_id:
             self.current_project_id = ref.project_id
 
+    def resolve_id(self, alias_or_id: str) -> str:
+        """Return full UUID for an alias like 'P1'/'T3', or pass-through if already full."""
+        return self._alias_map.get(alias_or_id, alias_or_id)
+
     def last_of_kind(self, kind: EntityKind) -> EntityRef | None:
         for r in reversed(self.recent):
             if r.kind == kind:
@@ -42,30 +46,52 @@ class SessionState:
         return None
 
     def snapshot_text(self, projects: list, tasks: list) -> str:
-        """Compact text summary injected into LLM context each turn."""
-        lines = ["## Current workspace state"]
-        if not projects:
-            lines.append("(empty — no projects yet)")
-        for p in projects:
-            lines.append(f"PROJECT id={p['id']} title={p['title']!r}")
-            project_tasks = [t for t in tasks if t.get("project_id") == p["id"]]
-            for i, t in enumerate(project_tasks):
-                urgency = " [URGENT]" if t.get("urgent") else ""
-                due = f" due={t['due_at']}" if t.get("due_at") else ""
-                lines.append(f"  TASK[{i}] id={t['id']} title={t['title']!r}{urgency}{due}")
-        orphans = [t for t in tasks if not t.get("project_id")]
-        if orphans:
-            lines.append("UNASSIGNED TASKS:")
-            for i, t in enumerate(orphans):
-                urgency = " [URGENT]" if t.get("urgent") else ""
-                lines.append(f"  TASK[{i}] id={t['id']} title={t['title']!r}{urgency}")
+        """Compact workspace summary injected into LLM context each turn."""
+        self._alias_map.clear()
+        lines: list[str] = []
+
+        if not projects and not tasks:
+            lines.append("WS: empty")
+        else:
+            lines.append("WS:")
+            p_counter = 0
+            t_counter = 0
+            for p in projects:
+                p_counter += 1
+                alias = f"P{p_counter}"
+                self._alias_map[alias] = p["id"]
+                project_tasks = [t for t in tasks if t.get("project_id") == p["id"]]
+                lines.append(f'{alias} "{p["title"]}"')
+                for t in project_tasks:
+                    t_counter += 1
+                    talias = f"T{t_counter}"
+                    self._alias_map[talias] = t["id"]
+                    flags = ""
+                    if t.get("urgent"):
+                        flags += "!"
+                    if t.get("due_at"):
+                        flags += f" due={t['due_at']}"
+                    lines.append(f'  {talias} "{t["title"]}"{flags}')
+            orphans = [t for t in tasks if not t.get("project_id")]
+            if orphans:
+                lines.append("UNASSIGNED:")
+                for t in orphans:
+                    t_counter += 1
+                    talias = f"T{t_counter}"
+                    self._alias_map[talias] = t["id"]
+                    flags = "!" if t.get("urgent") else ""
+                    lines.append(f'  {talias} "{t["title"]}"{flags}')
+
         if self.recent:
             last = self.recent[-1]
-            lines.append(f"## Last touched: {last.kind} id={last.id} title={last.title!r}")
+            # find alias for last touched
+            rev = {v: k for k, v in self._alias_map.items()}
+            alias = rev.get(last.id, last.id[:8])
+            lines.append(f'^{last.kind[0].upper()} {alias} "{last.title}"')
+
         return "\n".join(lines)
 
 
-# in-memory store keyed by session_id
 _states: dict[str, SessionState] = {}
 
 

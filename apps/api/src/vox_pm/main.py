@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import time
 
@@ -21,7 +22,10 @@ async def lifespan(app: FastAPI):
     print("\n\033[36m[api]\033[0m  API ready", flush=True)
     print("\033[36m[api]\033[0m  http://localhost:8000", flush=True)
     print("\033[36m[api]\033[0m  http://localhost:8000/docs  (Swagger)\n", flush=True)
-    yield
+    try:
+        yield
+    except asyncio.CancelledError:
+        pass
 
 
 def create_app() -> FastAPI:

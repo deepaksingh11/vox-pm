@@ -6,7 +6,7 @@ from sqlmodel import Field, SQLModel
 
 def _now() -> datetime:
     from datetime import UTC
-    return datetime.now(UTC)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _uuid() -> str:

@@ -22,6 +22,11 @@ async def create_project(
     title: str,
     session_id: str = "default",
 ) -> ProjectRead:
+    # Idempotent: return existing project if same title already exists (handles LLM retry after cancel)
+    existing = await session.exec(select(Project).where(Project.title == title))
+    if project := existing.first():
+        return ProjectRead.model_validate(project)
+
     project = Project(title=title)
     session.add(project)
     await session.commit()
@@ -42,7 +47,7 @@ async def update_project(
         return None
     if title is not None:
         project.title = title
-    project.updated_at = datetime.now(UTC)
+    project.updated_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(project)
     await session.commit()
     await session.refresh(project)

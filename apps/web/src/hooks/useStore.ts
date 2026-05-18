@@ -6,6 +6,7 @@ interface Store {
   projects: Project[];
   tasks: Task[];
   actions: ActionEntry[];
+  debugEvents: WSEvent[];
   partialTranscript: string;
   finalTranscript: string;
   agentThinking: boolean;
@@ -21,6 +22,12 @@ let _actionCounter = 0;
 function summarize(event: WSEvent): string {
   const d = event.data;
   switch (event.type) {
+    case "tool.started":
+      return `Calling ${d.name as string}…`;
+    case "tool.completed":
+      return `Done ${d.name as string} (${d.duration_ms as number}ms)`;
+    case "tool.failed":
+      return `Failed ${d.name as string}: ${d.error as string}`;
     case "project.created":
       return `Created project "${(d.project as Project)?.title}"`;
     case "project.updated":
@@ -48,6 +55,7 @@ export const useStore = create<Store>((set, get) => ({
   projects: [],
   tasks: [],
   actions: [],
+  debugEvents: [],
   partialTranscript: "",
   finalTranscript: "",
   agentThinking: false,
@@ -59,8 +67,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   applyEvent: (event) => {
-    if (event.type === "ping") return;
     const state = get();
+    // Always append to debug firehose (ping included), FIFO cap 100
+    set({ debugEvents: [...state.debugEvents, event].slice(-100) });
+
+    if (event.type === "ping") return;
 
     switch (event.type) {
       case "transcript.partial":
@@ -81,6 +92,18 @@ export const useStore = create<Store>((set, get) => ({
 
       case "agent.error":
         set({ agentThinking: false });
+        break;
+
+      case "tool.started":
+        set({ actions: addAction(state.actions, event) });
+        break;
+
+      case "tool.completed":
+        set({ actions: addAction(state.actions, event) });
+        break;
+
+      case "tool.failed":
+        set({ agentThinking: false, actions: addAction(state.actions, event) });
         break;
 
       case "project.created": {

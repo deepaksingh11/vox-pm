@@ -1,7 +1,9 @@
 """Pipecat pipeline factory per voice session."""
 
 import asyncio
+import time
 
+from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
     Frame,
@@ -12,13 +14,11 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.aggregators.llm_response_universal import (
-    LLMContextAggregatorPair,
-    LLMUserAggregatorParams,
-)
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.llm_service import FunctionCallParams
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 
 from vox_pm.agent.llm.factory import build_llm_service
@@ -44,17 +44,36 @@ async def _get_context_snapshot(session_id: str) -> str:
 
 
 def _make_tool_handler(session_id: str, context: LLMContext):
-    async def handle(function_name, tool_call_id, args, llm, ctx, result_callback):
-        await publish(session_id, "agent.thinking", {})
-        result = await dispatch_tool(function_name, dict(args), session_id)
+    async def handle(params: FunctionCallParams) -> None:
+        name = params.function_name
+        args = dict(params.arguments)
+        t0 = time.monotonic()
 
-        # Refresh workspace snapshot in system prompt after each tool call
-        snapshot = await _get_context_snapshot(session_id)
-        messages = (ctx or context).messages
-        if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-            messages[0]["content"] = build_system_prompt(snapshot)
+        logger.info(f"tool.started name={name} args={args}")
+        await publish(session_id, "tool.started", {"name": name, "arguments": args})
 
-        await result_callback(result)
+        try:
+            result = await dispatch_tool(name, args, session_id)
+            duration_ms = round((time.monotonic() - t0) * 1000)
+            logger.info(f"tool.completed name={name} duration_ms={duration_ms} result={result}")
+            await publish(session_id, "tool.completed", {"name": name, "result": result, "duration_ms": duration_ms})
+        except Exception as exc:
+            duration_ms = round((time.monotonic() - t0) * 1000)
+            error = str(exc)
+            logger.error(f"tool.failed name={name} error={error} duration_ms={duration_ms}")
+            await publish(session_id, "tool.failed", {"name": name, "error": error, "duration_ms": duration_ms})
+            result = {"ok": False, "error": error}
+
+        # Refresh snapshot regardless of success/failure so LLM sees current state
+        try:
+            snapshot = await _get_context_snapshot(session_id)
+            messages = (params.context or context).messages
+            if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+                messages[0]["content"] = build_system_prompt(snapshot)
+        except Exception:
+            pass
+
+        await params.result_callback(result)
 
     return handle
 
@@ -69,6 +88,7 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
         DailyParams(
             audio_out_enabled=True,
             audio_in_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(),
         ),
     )
 
@@ -95,10 +115,7 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
     tool_handler = _make_tool_handler(session_id, context)
     llm = build_llm_service(context, tool_handler, settings)
 
-    context_pair = LLMContextAggregatorPair(
-        context,
-        user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
-    )
+    context_pair = LLMContextAggregatorPair(context)
 
     pipeline = Pipeline(
         [
