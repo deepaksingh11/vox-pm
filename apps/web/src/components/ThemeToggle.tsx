@@ -1,37 +1,26 @@
 import { Sun, Moon, Monitor } from "lucide-react";
 import type { ThemeMode } from "../hooks/useTheme";
-import { cn } from "../lib/utils";
 
 interface Props {
   theme: ThemeMode;
   onSetTheme: (t: ThemeMode) => void;
 }
 
-const options: { mode: ThemeMode; Icon: typeof Sun; label: string }[] = [
-  { mode: "light",  Icon: Sun,     label: "Light"  },
-  { mode: "system", Icon: Monitor, label: "System" },
-  { mode: "dark",   Icon: Moon,    label: "Dark"   },
-];
+const cycle: ThemeMode[] = ["light", "system", "dark"];
+const icons: Record<ThemeMode, typeof Sun> = { light: Sun, system: Monitor, dark: Moon };
+const labels: Record<ThemeMode, string> = { light: "Light", system: "System", dark: "Dark" };
 
 export function ThemeToggle({ theme, onSetTheme }: Props) {
+  const Icon = icons[theme];
+  const next = cycle[(cycle.indexOf(theme) + 1) % cycle.length];
+
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-      {options.map(({ mode, Icon, label }) => (
-        <button
-          key={mode}
-          onClick={() => onSetTheme(mode)}
-          title={label}
-          className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all",
-            theme === mode
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Icon size={13} />
-          <span className="hidden sm:inline">{label}</span>
-        </button>
-      ))}
-    </div>
+    <button
+      onClick={() => onSetTheme(next)}
+      title={`${labels[theme]} — click to switch`}
+      className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+    >
+      <Icon size={15} />
+    </button>
   );
 }

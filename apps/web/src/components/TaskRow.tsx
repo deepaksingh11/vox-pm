@@ -58,13 +58,13 @@ export function TaskRow({ task, index: _index }: Props) {
             {task.due_at && (
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Calendar size={10} />
-                {format(new Date(task.due_at), "MMM d")}
+                {format(new Date(task.due_at), "dd MMM yyyy")}
               </span>
             )}
             {task.reminder_at && (
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Bell size={10} />
-                {format(new Date(task.reminder_at), "MMM d, h:mma")}
+                {format(new Date(task.reminder_at), "dd MMM yyyy, h:mma")}
               </span>
             )}
           </div>
@@ -84,7 +84,7 @@ export function TaskRow({ task, index: _index }: Props) {
               className="text-destructive focus:text-destructive"
               onClick={() => deleteTask(task.id)}
             >
-              Delete task
+              Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

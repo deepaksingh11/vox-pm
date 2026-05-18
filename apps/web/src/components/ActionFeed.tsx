@@ -4,17 +4,17 @@ import { cn } from "../lib/utils";
 import type { ActionEntry } from "../lib/types";
 
 const typeConfig: Partial<Record<ActionEntry["type"], { dot: string; label: string }>> = {
-  "tool.started":      { dot: "bg-muted-foreground/50", label: "Calling"          },
-  "tool.completed":    { dot: "bg-emerald-400",          label: "Tool done"        },
-  "tool.failed":       { dot: "bg-red-500",              label: "Tool failed"      },
-  "project.created":   { dot: "bg-emerald-500",          label: "Created project"  },
-  "project.updated":   { dot: "bg-sky-500",              label: "Updated project"  },
-  "project.deleted":   { dot: "bg-red-500",              label: "Deleted project"  },
-  "task.created":      { dot: "bg-emerald-500",          label: "Created task"     },
-  "task.updated":      { dot: "bg-sky-500",              label: "Updated task"     },
-  "task.deleted":      { dot: "bg-red-500",              label: "Deleted task"     },
-  "task.moved":        { dot: "bg-amber-500",            label: "Moved task"       },
-  "clarification.ask": { dot: "bg-violet-500",           label: "Asked clarification" },
+  "tool.started": { dot: "bg-muted-foreground/50", label: "Tool calling…" },
+  "tool.completed": { dot: "bg-emerald-400", label: "Tool completed" },
+  "tool.failed": { dot: "bg-red-500", label: "Tool failed" },
+  "project.created": { dot: "bg-emerald-500", label: "Project created" },
+  "project.updated": { dot: "bg-sky-500", label: "Project updated" },
+  "project.deleted": { dot: "bg-red-500", label: "Project deleted" },
+  "task.created": { dot: "bg-emerald-500", label: "Task created" },
+  "task.updated": { dot: "bg-sky-500", label: "Task updated" },
+  "task.deleted": { dot: "bg-red-500", label: "Task deleted" },
+  "task.moved": { dot: "bg-amber-500", label: "Task moved" },
+  "clarification.ask": { dot: "bg-violet-500", label: "Clarification asked" },
 };
 
 function ActionItem({ action }: { action: ActionEntry }) {
