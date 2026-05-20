@@ -1,4 +1,5 @@
-import { AlertCircle, Calendar, Bell, MoreHorizontal } from "lucide-react";
+import React from "react";
+import { AlertCircle, Calendar, Bell, MoreHorizontal, Loader2, Ban, XCircle } from "lucide-react";
 import { format, isValid } from "date-fns";
 
 function safeFormat(val: string | null | undefined, fmt: string): string | null {
@@ -21,6 +22,24 @@ interface Props {
   task: Task;
   index: number;
 }
+
+const STATUS_BADGE: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
+  in_progress: {
+    label: "In progress",
+    className: "text-blue-600 bg-blue-500/10",
+    icon: <Loader2 size={9} className="animate-spin" />,
+  },
+  blocked: {
+    label: "Blocked",
+    className: "text-orange-600 bg-orange-500/10",
+    icon: <Ban size={9} />,
+  },
+  cancelled: {
+    label: "Cancelled",
+    className: "text-muted-foreground bg-muted",
+    icon: <XCircle size={9} />,
+  },
+};
 
 export function TaskRow({ task, index: _index }: Props) {
   const isDone = task.status === "done";
@@ -51,6 +70,12 @@ export function TaskRow({ task, index: _index }: Props) {
             <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full">
               <AlertCircle size={9} />
               urgent
+            </span>
+          )}
+          {STATUS_BADGE[task.status] && (
+            <span className={cn("inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full", STATUS_BADGE[task.status].className)}>
+              {STATUS_BADGE[task.status].icon}
+              {STATUS_BADGE[task.status].label}
             </span>
           )}
         </div>

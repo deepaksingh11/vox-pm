@@ -13,7 +13,7 @@ export interface Task {
   urgent: boolean;
   due_at: string | null;
   reminder_at: string | null;
-  status: "open" | "done";
+  status: "open" | "in_progress" | "blocked" | "cancelled" | "done";
   position: number;
   created_at: string;
   updated_at: string;

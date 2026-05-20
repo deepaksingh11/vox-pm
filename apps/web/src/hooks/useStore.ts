@@ -150,7 +150,7 @@ export const useStore = create<Store>((set, get) => ({
         break;
 
       case "tool.started":
-        set({ actions: addAction(state.actions, event) });
+        set({ actions: addAction(state.actions, event), clarification: null });
         break;
 
       case "tool.completed":

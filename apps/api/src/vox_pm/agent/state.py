@@ -72,15 +72,6 @@ class SessionState:
                     if t.get("due_at"):
                         flags += f" due={t['due_at']}"
                     lines.append(f'  {talias} "{t["title"]}"{flags}')
-            orphans = [t for t in tasks if not t.get("project_id")]
-            if orphans:
-                lines.append("UNASSIGNED:")
-                for t in orphans:
-                    t_counter += 1
-                    talias = f"T{t_counter}"
-                    self._alias_map[talias] = t["id"]
-                    flags = "!" if t.get("urgent") else ""
-                    lines.append(f'  {talias} "{t["title"]}"{flags}')
 
         if self.recent:
             last = self.recent[-1]

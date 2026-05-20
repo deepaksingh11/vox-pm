@@ -73,7 +73,7 @@ TOOL_DEFINITIONS = [
                 "urgent": {"type": "boolean"},
                 "due_at": {"type": "string", "format": "date-time"},
                 "reminder_at": {"type": "string", "format": "date-time"},
-                "status": {"type": "string", "enum": ["open", "done"]},
+                "status": {"type": "string", "enum": ["open", "in_progress", "blocked", "cancelled", "done"]},
             },
             "required": ["id"],
         },
@@ -181,6 +181,8 @@ async def dispatch_tool(
 
             case "delete_project":
                 ok = await project_svc.delete_project(db, args["id"], session_id)
+                if state.current_project_id == args["id"]:
+                    state.current_project_id = None
                 return {"ok": ok}
 
             case "create_task":
