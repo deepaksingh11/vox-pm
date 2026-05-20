@@ -2,7 +2,20 @@
 
 Talk continuously. The agent parses intent from speech in real-time, executes PM operations (create/move/update/delete projects and tasks), and the UI updates live via WebSocket.
 
-See the [Loom walkthrough](#) (to be recorded).
+**Loom walkthrough (5-10 min):** https://www.loom.com/share/f62b05e4f18d474cad103d0185a48c76
+
+---
+
+## Docs
+
+| File | What's in it |
+|------|-------------|
+| [WRITEUP.md](WRITEUP.md) | Architecture deep-dive, design decisions, voice tradeoffs, scale challenges, Loom script |
+| [RUNNING.md](RUNNING.md) | Detailed local setup, env vars, DB setup |
+| [TEST_CHECKLIST.md](TEST_CHECKLIST.md) | Manual regression checklist (R1–R9), all passing |
+| [docs/CONTEXT.md](docs/CONTEXT.md) | Domain model, entities, business rules |
+| [apps/api/src/vox_pm/agent/README.md](apps/api/src/vox_pm/agent/README.md) | Agent pipeline, tool dispatch, reference resolution |
+| [apps/api/src/vox_pm/events/README.md](apps/api/src/vox_pm/events/README.md) | Event types, pub/sub architecture, WS gateway |
 
 ---
 
@@ -11,20 +24,18 @@ See the [Loom walkthrough](#) (to be recorded).
 ```
 Browser mic ──WebRTC──► Daily.co ──► Pipecat pipeline (Python)
                                          │
-                               DeepgramSTT (nova-3, interim results)
+                               Silero VAD → Deepgram STT (nova-3, interim results)
                                          │
                                Claude Sonnet 4.6 + tool calls
                                          │
                                services/  ──► Neon Postgres (direct, no pooler)
                                          │
-                               event bus ──► WS /ws/events
+                               asyncio event bus ──► WS /ws/events
                                          │
-React frontend ◄──WebSocket──────────────┘
+React + Zustand ◄──WebSocket─────────────┘
 ```
 
-**Key design decisions:** [ADR 0001–0004](docs/adr/)  
-**Domain model:** [docs/CONTEXT.md](docs/CONTEXT.md)  
-**Agent design:** [apps/api/src/vox_pm/agent/README.md](apps/api/src/vox_pm/agent/README.md)
+Two channels: **Daily WebRTC** for audio, **custom WebSocket** for all state events (transcripts, tool calls, entity CRUD, clarifications). See [WRITEUP.md](WRITEUP.md) for full design rationale.
 
 ---
 
