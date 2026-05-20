@@ -16,6 +16,7 @@ interface Store {
   loadInitialState: () => Promise<void>;
   applyEvent: (event: WSEvent) => void;
   clearClarification: () => void;
+  clearAgentState: () => void;
   setSelectedProject: (id: string | null) => void;
   toggleTaskDone: (taskId: string) => void;
   deleteTask: (taskId: string) => void;
@@ -154,7 +155,7 @@ export const useStore = create<Store>((set, get) => ({
         break;
 
       case "tool.completed":
-        set({ actions: addAction(state.actions, event) });
+        set({ agentThinking: false, actions: addAction(state.actions, event) });
         break;
 
       case "tool.failed":
@@ -176,6 +177,7 @@ export const useStore = create<Store>((set, get) => ({
         const p = event.data.project as Project;
         set({
           projects: state.projects.map((x) => (x.id === p.id ? p : x)),
+          agentThinking: false,
           actions: addAction(state.actions, event),
         });
         break;
@@ -189,6 +191,7 @@ export const useStore = create<Store>((set, get) => ({
             t.project_id === id ? { ...t, project_id: null } : t
           ),
           selectedProjectId: state.selectedProjectId === id ? null : state.selectedProjectId,
+          agentThinking: false,
           actions: addAction(state.actions, event),
         });
         break;
@@ -209,6 +212,7 @@ export const useStore = create<Store>((set, get) => ({
         const t = event.data.task as Task;
         set({
           tasks: state.tasks.map((x) => (x.id === t.id ? t : x)),
+          agentThinking: false,
           actions: addAction(state.actions, event),
         });
         break;
@@ -218,6 +222,7 @@ export const useStore = create<Store>((set, get) => ({
         const id = event.data.id as string;
         set({
           tasks: state.tasks.filter((x) => x.id !== id),
+          agentThinking: false,
           actions: addAction(state.actions, event),
         });
         break;
@@ -225,9 +230,15 @@ export const useStore = create<Store>((set, get) => ({
 
       case "task.moved": {
         const t = event.data.task as Task;
+        const fromId = event.data.from_project_id as string | null;
+        const toId = event.data.to_project_id as string | null;
+        const fromTitle = state.projects.find((p) => p.id === fromId)?.title ?? "Unassigned";
+        const toTitle = state.projects.find((p) => p.id === toId)?.title ?? "Unassigned";
+        const movedSummary = `Moved "${t.title}" from ${fromTitle} → ${toTitle}`;
         set({
           tasks: state.tasks.map((x) => (x.id === t.id ? t : x)),
-          actions: addAction(state.actions, event),
+          agentThinking: false,
+          actions: addAction(state.actions, event, movedSummary),
         });
         break;
       }
@@ -249,14 +260,15 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   clearClarification: () => set({ clarification: null }),
+  clearAgentState: () => set({ agentThinking: false, clarification: null, partialTranscript: "", finalTranscript: "" }),
 }));
 
-function addAction(actions: ActionEntry[], event: WSEvent): ActionEntry[] {
+function addAction(actions: ActionEntry[], event: WSEvent, summaryOverride?: string): ActionEntry[] {
   const entry: ActionEntry = {
     id: String(++_actionCounter),
     type: event.type as ActionEntry["type"],
     ts: event.ts,
-    summary: summarize(event),
+    summary: summaryOverride ?? summarize(event),
   };
   return [entry, ...actions].slice(0, 50);
 }

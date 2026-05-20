@@ -12,6 +12,7 @@ export function TaskPane() {
   const projects = useStore((s) => s.projects);
   const tasks = useStore((s) => s.tasks);
   const selectedProjectId = useStore((s) => s.selectedProjectId);
+  const agentThinking = useStore((s) => s.agentThinking);
 
   if (!selectedProjectId) {
     return (
@@ -85,7 +86,7 @@ export function TaskPane() {
       </div>
 
       {/* Task list */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className={`flex-1 overflow-y-auto scrollbar-thin transition-opacity duration-200 ${agentThinking ? "opacity-50 pointer-events-none" : ""}`}>
         {visibleTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center px-6">
             <div className="mb-3 p-3 rounded-full bg-primary/10">

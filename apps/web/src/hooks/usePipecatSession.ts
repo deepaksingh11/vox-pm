@@ -1,6 +1,7 @@
 import DailyIframe, { type DailyCall } from "@daily-co/daily-js";
 import { useCallback, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { useStore } from "./useStore";
 import type { VoiceSessionStatus } from "../lib/types";
 
 export function usePipecatSession() {
@@ -9,6 +10,7 @@ export function usePipecatSession() {
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const callRef = useRef<DailyCall | null>(null);
+  const clearAgentState = useStore((s) => s.clearAgentState);
 
   const start = useCallback(async () => {
     setStatus("connecting");
@@ -94,8 +96,9 @@ export function usePipecatSession() {
       setStatus("idle");
       setSessionId(null);
       setMuted(false);
+      clearAgentState();
     }
-  }, [sessionId]);
+  }, [sessionId, clearAgentState]);
 
   const toggleMic = useCallback(() => {
     const call = callRef.current;

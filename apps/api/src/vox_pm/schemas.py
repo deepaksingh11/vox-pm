@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Any, Literal
 
+TaskStatus = Literal["open", "in_progress", "blocked", "cancelled", "done"]
+
 from pydantic import BaseModel
 
 
@@ -23,7 +25,7 @@ class TaskRead(BaseModel):
     urgent: bool
     due_at: datetime | None
     reminder_at: datetime | None
-    status: Literal["open", "done"]
+    status: TaskStatus
     position: int
     created_at: datetime
     updated_at: datetime
@@ -55,7 +57,7 @@ class TaskUpdate(BaseModel):
     urgent: bool | None = None
     due_at: datetime | None = None
     reminder_at: datetime | None = None
-    status: Literal["open", "done"] | None = None
+    status: TaskStatus | None = None
 
 
 # --- WS event shapes ---
