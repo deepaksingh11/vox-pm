@@ -2,7 +2,7 @@
 
 Talk continuously. The agent parses intent from speech in real-time, executes PM operations (create/move/update/delete projects and tasks), and the UI updates live via WebSocket.
 
-**Loom walkthrough (5-10 min):** https://www.loom.com/share/f62b05e4f18d474cad103d0185a48c76
+**Loom walkthrough (5–10 min):** https://www.loom.com/share/f62b05e4f18d474cad103d0185a48c76
 
 ---
 
@@ -57,11 +57,27 @@ cd apps/api && uv sync && cd ../..
 pnpm install
 ```
 
-### 2. Database
+### 2. Environment variables
 
-Use your Neon Postgres URL in `.env` — **use the direct connection hostname** (no `-pooler` suffix):
-```
+```bash
+# Database — use direct hostname, no -pooler suffix
 DATABASE_URL=postgresql+asyncpg://user:pass@ep-xxx.us-east-1.aws.neon.tech/voxpm?sslmode=require
+
+# LLM — first key found wins (anthropic → gemini → openai fallback)
+ANTHROPIC_API_KEY=sk-ant-...
+# OPENAI_API_KEY=sk-...        # optional fallback
+# GEMINI_API_KEY=AIza...       # optional fallback
+
+# Voice
+DEEPGRAM_API_KEY=...
+CARTESIA_API_KEY=...
+CARTESIA_VOICE_ID=a0e99841-...
+
+# Daily.co (WebRTC rooms)
+DAILY_API_KEY=...
+
+# CORS — set to your frontend URL in production
+CORS_ORIGINS=http://localhost:5173
 ```
 
 Tables are created automatically on first startup (no migration step needed).
@@ -158,10 +174,45 @@ vercel --prod
 
 ---
 
+## Project structure
+
+```
+apps/
+├── api/                          # FastAPI + Pipecat backend
+│   └── src/vox_pm/
+│       ├── agent/
+│       │   ├── pipeline.py       # Pipecat frame graph (VAD→STT→LLM→TTS)
+│       │   ├── prompts.py        # System prompt + snapshot injection
+│       │   ├── tools.py          # Tool schema + dispatch (9 tools)
+│       │   ├── state.py          # SessionState, alias map, reference resolution
+│       │   └── llm/factory.py    # Provider fallback (Anthropic→OpenAI→Gemini)
+│       ├── events/
+│       │   ├── bus.py            # asyncio pub/sub (per-session queues)
+│       │   └── ws.py             # WebSocket gateway /ws/events
+│       ├── services/
+│       │   ├── projects.py       # Project CRUD (idempotent create, reparent-on-delete)
+│       │   └── tasks.py          # Task CRUD, move, position management
+│       ├── models.py             # SQLModel schema + indexes
+│       └── db.py                 # Async engine, pool config, Neon SSL handling
+└── web/                          # React frontend
+    └── src/
+        ├── hooks/
+        │   ├── useStore.ts        # Zustand store + WS event reducer
+        │   └── useEventStream.ts  # WebSocket client with reconnect guard
+        └── components/
+            ├── Sidebar.tsx        # Project list + create/rename/delete
+            ├── TaskPane.tsx       # Task list + empty state
+            ├── TaskRow.tsx        # Task row with date chips + actions
+            ├── ActionFeed.tsx     # Agent action feed (capped 50)
+            └── DebugPanel.tsx     # Raw WS event log (toggle with D)
+```
+
+---
+
 ## Development
 
 ```bash
-pnpm test          # Python unit tests
+pnpm test          # Python unit tests (pytest)
 pnpm check         # ruff + mypy + tsc + eslint
 pnpm --filter web typecheck   # TypeScript only
 ```
