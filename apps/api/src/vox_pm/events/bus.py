@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 
 from vox_pm.schemas import EventType, WSEvent
 
-
 _subscribers: dict[str, list[asyncio.Queue]] = defaultdict(list)
 
 
@@ -25,24 +24,23 @@ def unsubscribe(session_id: str, q: asyncio.Queue) -> None:
 
 
 async def publish(session_id: str, event_type: EventType, data: dict) -> None:
-    # Broadcast to all subscribers regardless of session_id.
-    # REST routers publish to "default" while WS clients subscribe to voice-session UUIDs;
-    # per-session routing silently dropped all REST-originated events.
+    # Deliver only to subscribers registered under this session_id.
+    # REST routers and voice pipeline both publish to the frontend clientId,
+    # so events are scoped to the correct client without cross-session leaks.
     event = WSEvent(type=event_type, ts=datetime.now(UTC), data=data)
-    dead: list[tuple[str, asyncio.Queue]] = []
+    dead: list[asyncio.Queue] = []
 
-    for sid, queues in list(_subscribers.items()):
-        for q in list(queues):
+    for q in list(_subscribers.get(session_id, [])):
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            # Drop oldest event to make room rather than permanently killing the subscriber.
+            # A slow client losing one old event is better than losing all future events.
             try:
+                q.get_nowait()
                 q.put_nowait(event)
-            except asyncio.QueueFull:
-                # M2: drop oldest event to make room rather than permanently killing the subscriber.
-                # A slow client losing one old event is better than losing all future events.
-                try:
-                    q.get_nowait()
-                    q.put_nowait(event)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    dead.append((sid, q))
+            except (asyncio.QueueEmpty, asyncio.QueueFull):
+                dead.append(q)
 
-    for sid, q in dead:
-        unsubscribe(sid, q)
+    for q in dead:
+        unsubscribe(session_id, q)

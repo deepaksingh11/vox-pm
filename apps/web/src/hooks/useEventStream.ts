@@ -13,6 +13,8 @@ export function useEventStream(
   const onReconnectRef = useRef(onReconnect);
   const activeRef = useRef(false);
   const attemptRef = useRef(0);
+  // Store pending reconnect timer so it can be cancelled on cleanup or session-id change.
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Skip onReconnect on the first successful open — caller already loads initial state on mount
   const hasConnectedRef = useRef(false);
 
@@ -20,6 +22,14 @@ export function useEventStream(
   onReconnectRef.current = onReconnect;
 
   const connect = useCallback((sid: string) => {
+    // Cancel any pending reconnect before opening a new connection.
+    // Without this, a stale timer from an old sessionId can fire after the new
+    // effect sets activeRef=true and call connect(oldSid), creating a second socket.
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
     if (wsRef.current) {
       const old = wsRef.current;
       old.onclose = null;
@@ -52,7 +62,11 @@ export function useEventStream(
       if (!activeRef.current) return;
       const attempt = ++attemptRef.current;
       const delay = Math.min(1000 * Math.pow(2, attempt - 1) + Math.random() * 500, 30_000);
-      setTimeout(() => { if (activeRef.current) connect(sid); }, delay);
+      // Store handle so cleanup can cancel it.
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        if (activeRef.current) connect(sid);
+      }, delay);
     };
   }, []);
 
@@ -64,6 +78,11 @@ export function useEventStream(
     connect(sessionId);
     return () => {
       activeRef.current = false;
+      // Cancel pending reconnect so a stale timer can't open a second socket.
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       const ws = wsRef.current;
       wsRef.current = null;
       if (ws) {

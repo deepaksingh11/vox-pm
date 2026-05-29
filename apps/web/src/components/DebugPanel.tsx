@@ -8,6 +8,7 @@ function isDebugEnabled() {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional hook+component co-location
 export function useDebugEnabled() {
   const [enabled, setEnabled] = useState(isDebugEnabled);
   function toggle() {

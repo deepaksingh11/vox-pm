@@ -20,7 +20,6 @@ import { useStore } from "../hooks/useStore";
 
 interface Props {
   task: Task;
-  index: number;
 }
 
 const STATUS_BADGE: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
@@ -41,7 +40,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string; icon: Rea
   },
 };
 
-export function TaskRow({ task, index: _index }: Props) {
+export function TaskRow({ task }: Props) {
   const isDone = task.status === "done";
   const toggleTaskDone = useStore((s) => s.toggleTaskDone);
   const deleteTask = useStore((s) => s.deleteTask);

@@ -19,12 +19,12 @@ async def events_ws(websocket: WebSocket, session_id: str = "default"):
             try:
                 event = await asyncio.wait_for(q.get(), timeout=30)
                 await websocket.send_text(event.model_dump_json())
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await websocket.send_text('{"type":"ping"}')
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        # M10: log unexpected errors so programming bugs aren't silently swallowed
+        # Log unexpected errors so programming bugs aren't silently swallowed.
         logger.warning(f"ws session error: {exc}")
     finally:
         unsubscribe(session_id, q)

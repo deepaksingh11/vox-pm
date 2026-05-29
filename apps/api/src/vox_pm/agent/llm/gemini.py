@@ -8,7 +8,7 @@ from vox_pm.config import Settings
 def build(context: LLMContext, tool_handler, settings: Settings):
     context.set_tools(TOOLS_SCHEMA)
     llm = GoogleLLMService(
-        api_key=settings.google_api_key,
+        api_key=settings.google_api_key or "",  # factory guards key presence before build()
         model=settings.gemini_model,
     )
     for tool in TOOL_DEFINITIONS:

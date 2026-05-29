@@ -145,10 +145,10 @@ P2 "Q2 Review"
 
 ---
 
-### 4.7 In-process asyncio pub/sub
-**What**: `events/bus.py` — `dict[session_id, list[asyncio.Queue(maxsize=256)]]`. `publish()` **broadcasts to every subscriber** (single global workspace — per-session routing caused REST mutations to land in the wrong bucket). On `QueueFull`, drops the oldest event from the queue and inserts the new one, keeping the subscriber alive rather than permanently evicting it.
+### 4.7 In-process asyncio pub/sub with per-client routing
+**What**: `events/bus.py` — `dict[session_id, list[asyncio.Queue(maxsize=256)]]`. `publish(session_id, ...)` delivers only to subscribers registered under that `session_id` — no global fan-out. All three event sources use the same key (the browser's stable `client_id` from `localStorage`): REST routers read it from the `X-Client-Id` header, the voice pipeline receives it from the session-creation body, and WS clients subscribe with `?session_id=<clientId>`. On `QueueFull`, drops the oldest event from the queue and inserts the new one, keeping the subscriber alive rather than permanently evicting it.
 
-**Why**: For a single-process, single-user app this is the right level of complexity — no Redis dependency, no serialization overhead, no network hop. The tradeoff (dies on horizontal scale) is acceptable for v1 and the replacement path is clear: swap `asyncio.Queue` for Redis Streams or NATS JetStream when needed.
+**Why**: For a single-process, single-user app this is the right level of complexity — no Redis dependency, no serialization overhead, no network hop. Threading one stable `client_id` through all three channels (REST, voice, WS) eliminated the routing mismatch that previously forced a global broadcast. The tradeoff (dies on horizontal scale) is acceptable for v1 and the replacement path is clear: swap `asyncio.Queue` for Redis Streams or NATS JetStream, keeping the same `session_id`-keyed routing contract.
 
 > File: `apps/api/src/vox_pm/events/bus.py`
 

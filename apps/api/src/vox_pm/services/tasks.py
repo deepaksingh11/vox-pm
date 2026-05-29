@@ -1,9 +1,11 @@
+import asyncio
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select
 
 from vox_pm.events.bus import publish
 from vox_pm.models import Project, Task
@@ -12,11 +14,20 @@ from vox_pm.schemas import ProjectRead, TaskRead
 UPDATABLE_TASK_FIELDS = {"title", "description", "urgent", "due_at", "reminder_at", "status"}
 VALID_TASK_STATUSES = {"open", "in_progress", "blocked", "cancelled", "done"}
 
+# Per-bucket asyncio lock serialises position assignment within a process.
+# Prevents both the cross-session TOCTOU race and the NULL-bucket silent duplicate
+# (Postgres treats (NULL, 5) as distinct from other (NULL, 5) rows, so the unique
+# constraint never fires for unassigned tasks — the lock covers that gap).
+# Key = project_id (None for the unassigned bucket).
+# defaultdict is safe: asyncio.Lock() construction is synchronous and asyncio is
+# single-threaded, so no two coroutines can race to insert the same key.
+_position_locks: defaultdict[str | None, asyncio.Lock] = defaultdict(asyncio.Lock)
+
 
 async def list_tasks(
     session: AsyncSession, project_id: str | None = None
 ) -> list[TaskRead]:
-    query = select(Task).order_by(Task.position, Task.created_at)
+    query = select(Task).order_by(col(Task.position), col(Task.created_at))
     if project_id is not None:
         query = query.where(Task.project_id == project_id)
     result = await session.exec(query)
@@ -32,7 +43,7 @@ async def _next_position(session: AsyncSession, project_id: str | None) -> int:
     if project_id is not None:
         stmt = stmt.where(Task.project_id == project_id)
     else:
-        stmt = stmt.where(Task.project_id.is_(None))
+        stmt = stmt.where(col(Task.project_id).is_(None))
     result = await session.exec(stmt)
     return (result.first() or 0) + 1
 
@@ -47,30 +58,34 @@ async def create_task(
     reminder_at: datetime | None = None,
     session_id: str = "default",
 ) -> TaskRead:
-    # Retry on position collision (uq_tasks_project_position)
-    last_exc: Exception | None = None
-    for attempt in range(3):
-        try:
-            position = await _next_position(session, project_id)
-            task = Task(
-                title=title,
-                project_id=project_id,
-                description=description,
-                urgent=urgent,
-                due_at=due_at,
-                reminder_at=reminder_at,
-                position=position,
-            )
-            session.add(task)
-            await session.commit()
-            break
-        except IntegrityError as exc:
-            last_exc = exc
-            await session.rollback()
-            if attempt == 2:
-                raise
-    else:
-        raise last_exc  # type: ignore[misc]
+    # Hold the per-bucket lock for the full read-compute-insert cycle.
+    # Serialises position assignment within the process, covering both the
+    # cross-session TOCTOU race and the NULL-bucket duplicate (see module comment).
+    # The IntegrityError retry loop remains as a backstop for multi-process deployments.
+    async with _position_locks[project_id]:
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                position = await _next_position(session, project_id)
+                task = Task(
+                    title=title,
+                    project_id=project_id,
+                    description=description,
+                    urgent=urgent,
+                    due_at=due_at,
+                    reminder_at=reminder_at,
+                    position=position,
+                )
+                session.add(task)
+                await session.commit()
+                break
+            except IntegrityError as exc:
+                last_exc = exc
+                await session.rollback()
+                if attempt == 2:
+                    raise
+        else:
+            raise last_exc  # type: ignore[misc]
 
     await session.refresh(task)
     read = TaskRead.model_validate(task)
@@ -123,25 +138,27 @@ async def move_task(
         return None
     from_project_id = task.project_id
 
-    last_exc: Exception | None = None
-    for attempt in range(3):
-        try:
-            task.project_id = project_id
-            task.position = await _next_position(session, project_id)
-            task.updated_at = datetime.now(UTC).replace(tzinfo=None)
-            session.add(task)
-            await session.commit()
-            break
-        except IntegrityError as exc:
-            last_exc = exc
-            await session.rollback()
-            task = await session.get(Task, task_id)
-            if not task:
-                return None
-            if attempt == 2:
-                raise
-    else:
-        raise last_exc  # type: ignore[misc]
+    # Lock the destination bucket — position is computed in the destination, not the source.
+    async with _position_locks[project_id]:
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                task.project_id = project_id
+                task.position = await _next_position(session, project_id)
+                task.updated_at = datetime.now(UTC).replace(tzinfo=None)
+                session.add(task)
+                await session.commit()
+                break
+            except IntegrityError as exc:
+                last_exc = exc
+                await session.rollback()
+                task = await session.get(Task, task_id)
+                if not task:
+                    return None
+                if attempt == 2:
+                    raise
+        else:
+            raise last_exc  # type: ignore[misc]
 
     await session.refresh(task)
     read = TaskRead.model_validate(task)
@@ -190,7 +207,12 @@ async def convert_task_to_project(
 
     project = Project(title=title)
     session.add(project)
-    await session.flush()  # get id; raises IntegrityError on duplicate title
+    try:
+        await session.flush()  # get id; raises IntegrityError on duplicate title
+    except IntegrityError:
+        # Rollback so the session is usable; the task remains intact.
+        await session.rollback()
+        raise
 
     await session.delete(task)
     await session.commit()

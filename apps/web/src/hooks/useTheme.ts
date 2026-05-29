@@ -18,29 +18,23 @@ export function useTheme() {
     return (localStorage.getItem("vox-pm-theme") as ThemeMode) ?? "system";
   });
 
-  const [resolved, setResolved] = useState<"light" | "dark">(() => resolveMode(theme));
-
   const setTheme = useCallback((next: ThemeMode) => {
     localStorage.setItem("vox-pm-theme", next);
     setThemeState(next);
   }, []);
 
   useEffect(() => {
-    const r = resolveMode(theme);
-    setResolved(r);
-    applyResolved(r);
+    applyResolved(resolveMode(theme));
 
     if (theme !== "system") return;
 
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const onChange = (e: MediaQueryListEvent) => {
-      const next = e.matches ? "dark" : "light";
-      setResolved(next);
-      applyResolved(next);
+      applyResolved(e.matches ? "dark" : "light");
     };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, [theme]);
 
-  return { theme, resolved, setTheme };
+  return { theme, setTheme };
 }

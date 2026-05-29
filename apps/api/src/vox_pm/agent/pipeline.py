@@ -14,7 +14,9 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+)
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
@@ -53,7 +55,7 @@ def _trim_context(context: LLMContext) -> None:
     del msgs[1 : len(msgs) - _MAX_CONTEXT_MESSAGES]
 
 
-def _make_tool_handler(session_id: str, context: LLMContext):
+def _make_tool_handler(session_id: str, context: LLMContext, ctx_lock: asyncio.Lock):
     async def handle(params: FunctionCallParams) -> None:
         name = params.function_name
         args = dict(params.arguments)
@@ -63,7 +65,7 @@ def _make_tool_handler(session_id: str, context: LLMContext):
         await publish(session_id, "tool.started", {"name": name, "arguments": args})
 
         try:
-            # M11: 30s hard timeout on tool dispatch (DB + LLM ops)
+            # 30 s hard timeout guards against a hung DB call or LLM non-response.
             result = await asyncio.wait_for(
                 dispatch_tool(name, args, session_id),
                 timeout=30.0,
@@ -71,7 +73,7 @@ def _make_tool_handler(session_id: str, context: LLMContext):
             duration_ms = round((time.monotonic() - t0) * 1000)
             logger.info(f"tool.completed name={name} duration_ms={duration_ms} result={result}")
             await publish(session_id, "tool.completed", {"name": name, "result": result, "duration_ms": duration_ms})
-        except asyncio.TimeoutError:
+        except TimeoutError:
             duration_ms = 30_000
             error = f"{name} timed out after 30s"
             logger.error(f"tool.timeout name={name}")
@@ -84,16 +86,19 @@ def _make_tool_handler(session_id: str, context: LLMContext):
             await publish(session_id, "tool.failed", {"name": name, "error": error, "duration_ms": duration_ms})
             result = {"ok": False, "error": error}
 
-        try:
-            snapshot = await _get_context_snapshot(session_id)
-            messages = (params.context or context).messages
-            if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-                messages[0]["content"] = build_system_prompt(snapshot)
-        except Exception as exc:
-            logger.warning(f"snapshot refresh failed: {exc}")
+        # Serialize context mutation: concurrent tool calls share context.messages,
+        # so snapshot refresh + system-prompt replace + trim must not interleave.
+        async with ctx_lock:
+            try:
+                snapshot = await _get_context_snapshot(session_id)
+                messages = (params.context or context).messages
+                if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+                    messages[0]["content"] = build_system_prompt(snapshot)
+            except Exception as exc:
+                logger.warning(f"snapshot refresh failed: {exc}")
 
-        # M6: trim context to prevent unbounded growth over long sessions
-        _trim_context(params.context or context)
+            # Trim context to prevent unbounded growth over long sessions.
+            _trim_context(params.context or context)
 
         await params.result_callback(result)
 
@@ -135,7 +140,8 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
     context = LLMContext()
     context.add_message({"role": "system", "content": build_system_prompt(snapshot)})
 
-    tool_handler = _make_tool_handler(session_id, context)
+    ctx_lock = asyncio.Lock()  # Serializes concurrent tool-handler context mutations.
+    tool_handler = _make_tool_handler(session_id, context, ctx_lock)
     llm = build_llm_service(context, tool_handler, settings)
 
     context_pair = LLMContextAggregatorPair(context)
@@ -177,7 +183,7 @@ class _TranscriptPublisher(FrameProcessor):
     def __init__(self, session_id: str):
         super().__init__()
         self._session_id = session_id
-        # M1: keep strong refs so tasks aren't GC'd mid-flight
+        # Keep strong refs to in-flight tasks so they aren't GC'd mid-flight.
         self._tasks: set[asyncio.Task] = set()
 
     def _fire(self, coro) -> None:

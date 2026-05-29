@@ -1,5 +1,5 @@
 import DailyIframe, { type DailyCall } from "@daily-co/daily-js";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useStore } from "./useStore";
 import type { VoiceSessionStatus } from "../lib/types";
@@ -10,14 +10,39 @@ export function usePipecatSession() {
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const callRef = useRef<DailyCall | null>(null);
+  // Track session id in a ref so stop() always reads the current value even
+  // if called before setSessionId()'s state flush has propagated.
+  const sessionIdRef = useRef<string | null>(null);
+  // Status ref for start() idempotency guard — avoids adding status to deps.
+  const statusRef = useRef<VoiceSessionStatus>("idle");
   const clearAgentState = useStore((s) => s.clearAgentState);
 
+  /** Sync status state + ref together. */
+  const _setStatus = useCallback((s: VoiceSessionStatus) => {
+    statusRef.current = s;
+    setStatus(s);
+  }, []);
+
+  // Unmount cleanup: destroy any live Daily call so the mic is released.
+  useEffect(() => {
+    return () => {
+      const c = callRef.current;
+      if (c) {
+        callRef.current = null;
+        c.leave().catch(() => {});
+        c.destroy();
+      }
+    };
+  }, []);
+
   const start = useCallback(async () => {
-    setStatus("connecting");
+    // Idempotency guard: bail if already connecting, active, or disconnecting.
+    if (statusRef.current !== "idle" && statusRef.current !== "error") return;
+    _setStatus("connecting");
     setError(null);
     setMuted(false);
     try {
-      // Preflight: surface mic permission before Daily runs so errors are readable
+      // Preflight: surface mic permission before Daily runs so errors are readable.
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach((t) => t.stop());
@@ -33,6 +58,9 @@ export function usePipecatSession() {
       }
 
       const { session_id, room_url, token } = await api.voice.createSession();
+      // Set ref immediately (before any await) so stop() can read it even if
+      // the state flush hasn't propagated yet.
+      sessionIdRef.current = session_id;
       setSessionId(session_id);
 
       const call = DailyIframe.createCallObject({
@@ -42,13 +70,14 @@ export function usePipecatSession() {
       callRef.current = call;
 
       call.on("left-meeting", () => {
-        setStatus("idle");
+        sessionIdRef.current = null;
+        _setStatus("idle");
         setSessionId(null);
         setMuted(false);
       });
       call.on("error", (e) => {
         setError(e?.errorMsg ?? "Daily error");
-        setStatus("error");
+        _setStatus("error");
       });
       call.on("camera-error", (e) => {
         const msg = e?.errorMsg ?? "unknown";
@@ -67,38 +96,45 @@ export function usePipecatSession() {
         if (!e?.participant?.local) return;
         const audioState = e.participant.tracks?.audio?.state;
         console.info("[Daily] local audio.state:", audioState);
-        // Sync muted from Daily truth — covers OS-level revocations
+        // Sync muted from Daily truth — covers OS-level revocations.
         const nowMuted = audioState === "off" || audioState === "blocked";
         setMuted(nowMuted);
       });
 
       await call.join({ url: room_url, token });
-      setStatus("active");
+      _setStatus("active");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to start session";
       setError(msg);
-      setStatus("error");
+      _setStatus("error");
     }
-  }, []);
+  }, [_setStatus]);
 
   const stop = useCallback(async () => {
-    setStatus("disconnecting");
+    _setStatus("disconnecting");
+    // Null callRef before any await so nothing else can grab a half-dead call.
+    const call = callRef.current;
+    callRef.current = null;
+    // Read ref, not state: state may be stale if stop() is called before
+    // React flushes the setSessionId update from start().
+    const sid = sessionIdRef.current;
+    sessionIdRef.current = null;
     try {
-      if (callRef.current) {
-        await callRef.current.leave();
-        callRef.current.destroy();
-        callRef.current = null;
+      if (call) {
+        // Always destroy even if leave() rejects — keeps callRef nulled.
+        try { await call.leave(); } catch { /* ignore */ }
+        try { call.destroy(); } catch { /* ignore */ }
       }
-      if (sessionId) {
-        await api.voice.endSession(sessionId).catch(() => {});
+      if (sid) {
+        await api.voice.endSession(sid).catch(() => {});
       }
     } finally {
-      setStatus("idle");
+      _setStatus("idle");
       setSessionId(null);
       setMuted(false);
       clearAgentState();
     }
-  }, [sessionId, clearAgentState]);
+  }, [_setStatus, clearAgentState]);
 
   const toggleMic = useCallback(() => {
     const call = callRef.current;

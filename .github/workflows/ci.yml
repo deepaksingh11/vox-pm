@@ -14,12 +14,46 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --project apps/api
-      - run: uv run --project apps/api ruff check src
+      # H7: lint src AND tests (catches F401 and other issues in test files)
+      - run: uv run --project apps/api ruff check src tests
+        working-directory: apps/api
+      # H7: type-check with mypy
+      - run: uv run --project apps/api mypy src
         working-directory: apps/api
       - run: uv run --project apps/api pytest
         working-directory: apps/api
         env:
           DATABASE_URL: "sqlite+aiosqlite:///./test.db"
+
+  # H8: run tests against real Postgres to catch NULL-uniqueness, asyncpg, and
+  # IntegrityError-shape differences that SQLite cannot exercise.
+  api-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: voxpm
+          POSTGRES_PASSWORD: voxpm
+          POSTGRES_DB: voxpm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --project apps/api
+      - run: uv run --project apps/api pytest
+        working-directory: apps/api
+        env:
+          DATABASE_URL: "postgresql+asyncpg://voxpm:voxpm@localhost:5432/voxpm"
+          TEST_DATABASE_URL: "postgresql+asyncpg://voxpm:voxpm@localhost:5432/voxpm"
 
   web:
     runs-on: ubuntu-latest
@@ -34,4 +68,6 @@ jobs:
           cache: "pnpm"
       - run: pnpm install
       - run: pnpm --filter web typecheck
+      # H7: run eslint (was advertised in docs but never executed in CI)
+      - run: pnpm --filter web lint
       - run: pnpm --filter web build

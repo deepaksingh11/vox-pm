@@ -1,6 +1,5 @@
 """SessionState reference resolution unit tests."""
 
-import pytest
 from vox_pm.agent.state import EntityRef, SessionState
 
 

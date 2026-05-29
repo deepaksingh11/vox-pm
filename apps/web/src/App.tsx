@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePipecatSession } from "./hooks/usePipecatSession";
 import { useEventStream } from "./hooks/useEventStream";
 import { useStore } from "./hooks/useStore";
@@ -13,18 +13,9 @@ import { DebugPanel, useDebugEnabled } from "./components/DebugPanel";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import imgUrl from "/vox.svg";
-
-function useClientId(): string {
-  const [clientId] = useState(() => {
-    const KEY = "vox-pm-client-id";
-    const stored = localStorage.getItem(KEY);
-    if (stored) return stored;
-    const id = crypto.randomUUID();
-    localStorage.setItem(KEY, id);
-    return id;
-  });
-  return clientId;
-}
+// Import the stable client id that api.ts manages; avoids a second localStorage
+// read and guarantees both WS and REST use the exact same value.
+import { clientId } from "./lib/api";
 
 export default function App() {
   const { status, error, muted, start, stop, toggleMic } = usePipecatSession();
@@ -32,7 +23,6 @@ export default function App() {
   const loadInitialState = useStore((s) => s.loadInitialState);
   const { theme, setTheme } = useTheme();
   const { enabled: debugEnabled, toggle: toggleDebug } = useDebugEnabled();
-  const clientId = useClientId();
 
   useEffect(() => {
     void loadInitialState();

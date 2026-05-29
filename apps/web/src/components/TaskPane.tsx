@@ -99,8 +99,8 @@ export function TaskPane() {
           </div>
         ) : (
           <div className="divide-y divide-border/50">
-            {visibleTasks.map((t, i) => (
-              <TaskRow key={t.id} task={t} index={i} />
+            {visibleTasks.map((t) => (
+              <TaskRow key={t.id} task={t} />
             ))}
           </div>
         )}

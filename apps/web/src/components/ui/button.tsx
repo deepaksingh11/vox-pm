@@ -61,4 +61,5 @@ function Button({
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- buttonVariants is a variant helper, intentionally co-exported
 export { Button, buttonVariants }

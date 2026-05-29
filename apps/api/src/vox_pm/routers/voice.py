@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-import uuid
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -10,7 +9,7 @@ from loguru import logger
 
 from vox_pm.agent.pipeline import run_pipeline
 from vox_pm.config import get_settings
-from vox_pm.schemas import SessionCreateResponse
+from vox_pm.schemas import SessionCreateRequest, SessionCreateResponse
 
 router = APIRouter()
 
@@ -66,40 +65,50 @@ async def _create_daily_room(api_key: str) -> tuple[str, str, str, str]:
 
 
 @router.post("/session", response_model=SessionCreateResponse)
-async def create_session():
+async def create_session(body: SessionCreateRequest):
+    # Use the client-supplied id as the event channel so REST, voice, and WS all publish to the same bucket.
+    client_id = body.client_id
     settings = get_settings()
     if not settings.daily_api_key:
         raise HTTPException(status_code=503, detail="Daily API key not configured")
 
+    # Prevent duplicate sessions for the same client (e.g. rapid double-click).
+    if client_id in _active_sessions and not _active_sessions[client_id].done():
+        raise HTTPException(status_code=409, detail="Session already active for this client")
+
     try:
         room_url, bot_token, user_token, room_name = await _create_daily_room(settings.daily_api_key)
     except httpx.HTTPError:
-        # M9: don't expose raw httpx error (may include request URL / auth headers)
+        # Don't expose raw httpx error: it may contain the request URL or auth headers.
         raise HTTPException(status_code=502, detail="Voice service unavailable") from None
 
-    session_id = str(uuid.uuid4())
-    _session_rooms[session_id] = room_name
+    _session_rooms[client_id] = room_name
 
     pipeline_task = asyncio.create_task(
-        run_pipeline(session_id, room_url, bot_token),
-        name=f"pipeline-{session_id}",
+        run_pipeline(client_id, room_url, bot_token),
+        name=f"pipeline-{client_id}",
     )
-    _active_sessions[session_id] = pipeline_task
+    _active_sessions[client_id] = pipeline_task
 
     def _cleanup(t: asyncio.Task):
-        _active_sessions.pop(session_id, None)
-        room = _session_rooms.pop(session_id, None)
+        _active_sessions.pop(client_id, None)
+        room = _session_rooms.pop(client_id, None)
         if room:
-            # M9: delete the Daily room when the pipeline exits (normal or error)
-            asyncio.create_task(_delete_daily_room(settings.daily_api_key, room))
-        if not t.cancelled() and t.exception():
+            # Keep a strong ref so the task isn't GC'd before the DELETE completes.
+            cleanup_task = asyncio.create_task(
+                _delete_daily_room(settings.daily_api_key, room),
+                name=f"room-cleanup-{client_id}",
+            )
+            cleanup_task.add_done_callback(lambda _: None)  # prevent GC
+        exc = t.exception() if not t.cancelled() else None
+        if exc is not None:
             import traceback
-            print(f"\n[pipeline error] session={session_id}")
-            traceback.print_exception(type(t.exception()), t.exception(), t.exception().__traceback__)
+            print(f"\n[pipeline error] session={client_id}")
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
 
     pipeline_task.add_done_callback(_cleanup)
 
-    return SessionCreateResponse(session_id=session_id, room_url=room_url, token=user_token)
+    return SessionCreateResponse(session_id=client_id, room_url=room_url, token=user_token)
 
 
 @router.delete("/session/{session_id}", status_code=204)

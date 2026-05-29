@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import col, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select, update
 
 from vox_pm.events.bus import publish
 from vox_pm.models import Project, Task
@@ -10,7 +10,7 @@ from vox_pm.schemas import ProjectRead
 
 
 async def list_projects(session: AsyncSession) -> list[ProjectRead]:
-    result = await session.exec(select(Project).order_by(Project.created_at))
+    result = await session.exec(select(Project).order_by(col(Project.created_at)))
     return [ProjectRead.model_validate(p) for p in result.all()]
 
 
@@ -32,7 +32,7 @@ async def create_project(
     try:
         await session.commit()
     except IntegrityError:
-        # M7: concurrent request won the uq_projects_title race — fetch the winner
+        # Concurrent request won the unique-title race; fetch the winner rather than returning a 500.
         await session.rollback()
         result = await session.exec(select(Project).where(Project.title == title))
         project = result.first()
@@ -72,7 +72,7 @@ async def delete_project(
     project = await session.get(Project, project_id)
     if not project:
         return False
-    await session.exec(update(Task).where(Task.project_id == project_id).values(project_id=None))
+    await session.exec(update(Task).where(col(Task.project_id) == project_id).values(project_id=None))
     await session.delete(project)
     await session.commit()
     await publish(session_id, "project.deleted", {"id": project_id})

@@ -42,6 +42,9 @@ dev-dependencies = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+# E501 (line-too-long) is a pre-existing style issue across the codebase;
+# exclude it until the team decides on a formatter/line-length policy.
+ignore = ["E501"]
 
 [tool.mypy]
 strict = false

@@ -7,9 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from vox_pm.config import get_settings
 from vox_pm.db import create_tables, get_session_factory
-from vox_pm.routers import projects, tasks, voice
 from vox_pm.events.ws import router as ws_router
-
+from vox_pm.routers import projects, tasks, voice
 
 _started_at = 0.0
 
@@ -37,14 +36,15 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Vox PM API", lifespan=lifespan)
 
-    # M8: explicit methods/headers — allow_methods=["*"] with allow_credentials=True
-    # is dangerous if origins ever include "*" (browser would reflect it)
+    # Explicit methods/headers: allow_methods=["*"] with allow_credentials=True is
+    # dangerous if origins ever include "*" (the browser would reflect it).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization"],
+        # X-Client-Id is a custom header and must be listed here to survive CORS preflight.
+        allow_headers=["Content-Type", "Authorization", "X-Client-Id"],
     )
 
     app.include_router(projects.router, prefix="/api/projects", tags=["projects"])

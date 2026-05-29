@@ -66,7 +66,7 @@ DATABASE_URL=postgresql+asyncpg://user:pass@ep-xxx.us-east-1.aws.neon.tech/voxpm
 # LLM — first key found wins (anthropic → gemini → openai fallback)
 ANTHROPIC_API_KEY=sk-ant-...
 # OPENAI_API_KEY=sk-...        # optional fallback
-# GEMINI_API_KEY=AIza...       # optional fallback
+# GOOGLE_API_KEY=AIza...       # optional fallback (Gemini)
 
 # Voice
 DEEPGRAM_API_KEY=...

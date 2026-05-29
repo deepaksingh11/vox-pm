@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 EntityKind = Literal["project", "task"]
 
 _ALIAS_RE = re.compile(r"^[PT]\d+$")

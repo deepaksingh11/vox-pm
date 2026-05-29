@@ -1,10 +1,9 @@
 from datetime import datetime
 from typing import Any, Literal
 
-TaskStatus = Literal["open", "in_progress", "blocked", "cancelled", "done"]
-
 from pydantic import BaseModel
 
+TaskStatus = Literal["open", "in_progress", "blocked", "cancelled", "done"]
 
 # --- REST response shapes ---
 
@@ -89,6 +88,11 @@ class WSEvent(BaseModel):
 
 
 # --- Voice session ---
+
+class SessionCreateRequest(BaseModel):
+    # The client sends its stable localStorage UUID so REST, voice, and WS all use the same channel.
+    client_id: str
+
 
 class SessionCreateResponse(BaseModel):
     session_id: str

@@ -1,6 +1,6 @@
 """Tool definitions and handlers for the PM agent."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from pipecat.adapters.schemas.function_schema import FunctionSchema
@@ -13,8 +13,7 @@ from vox_pm.events.bus import publish
 from vox_pm.services import projects as project_svc
 from vox_pm.services import tasks as task_svc
 
-
-TOOL_DEFINITIONS = [
+TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "create_project",
         "description": "Create a new project.",
@@ -184,17 +183,17 @@ async def dispatch_tool(
     async with factory() as db:
         match name:
             case "create_project":
-                result = await project_svc.create_project(db, args["title"], session_id)
-                state.touch(EntityRef(id=result.id, title=result.title, kind="project"))
-                return {"ok": True, "id": result.id, "title": result.title}
+                proj = await project_svc.create_project(db, args["title"], session_id)
+                state.touch(EntityRef(id=proj.id, title=proj.title, kind="project"))
+                return {"ok": True, "id": proj.id, "title": proj.title}
 
             case "update_project":
-                result = await project_svc.update_project(
+                updated_proj = await project_svc.update_project(
                     db, args["id"], title=args.get("title"), session_id=session_id
                 )
-                if result:
-                    state.touch(EntityRef(id=result.id, title=result.title, kind="project"))
-                return {"ok": result is not None}
+                if updated_proj:
+                    state.touch(EntityRef(id=updated_proj.id, title=updated_proj.title, kind="project"))
+                return {"ok": updated_proj is not None}
 
             case "delete_project":
                 ok = await project_svc.delete_project(db, args["id"], session_id)
@@ -203,7 +202,7 @@ async def dispatch_tool(
                 return {"ok": ok}
 
             case "create_task":
-                result = await task_svc.create_task(
+                created_task = await task_svc.create_task(
                     db,
                     title=args["title"],
                     project_id=args.get("project_id") or state.current_project_id,
@@ -214,12 +213,12 @@ async def dispatch_tool(
                     session_id=session_id,
                 )
                 state.touch(EntityRef(
-                    id=result.id,
-                    title=result.title,
+                    id=created_task.id,
+                    title=created_task.title,
                     kind="task",
-                    project_id=result.project_id,
+                    project_id=created_task.project_id,
                 ))
-                return {"ok": True, "id": result.id, "title": result.title}
+                return {"ok": True, "id": created_task.id, "title": created_task.title}
 
             case "update_task":
                 task_id = args.pop("id", None)
@@ -229,39 +228,41 @@ async def dispatch_tool(
                     args["due_at"] = _parse_dt(args["due_at"])
                 if "reminder_at" in args:
                     args["reminder_at"] = _parse_dt(args["reminder_at"])
-                result = await task_svc.update_task(db, task_id, session_id, **args)
-                if result:
+                updated_task = await task_svc.update_task(db, task_id, session_id, **args)
+                if updated_task:
                     state.touch(EntityRef(
-                        id=result.id, title=result.title, kind="task", project_id=result.project_id
+                        id=updated_task.id, title=updated_task.title,
+                        kind="task", project_id=updated_task.project_id,
                     ))
-                return {"ok": result is not None}
+                return {"ok": updated_task is not None}
 
             case "delete_task":
                 ok = await task_svc.delete_task(db, args["id"], session_id)
                 return {"ok": ok}
 
             case "move_task":
-                result = await task_svc.move_task(
+                moved_task = await task_svc.move_task(
                     db, args["task_id"], args.get("project_id"), session_id
                 )
-                if result:
+                if moved_task:
                     state.touch(EntityRef(
-                        id=result.id, title=result.title, kind="task", project_id=result.project_id
+                        id=moved_task.id, title=moved_task.title,
+                        kind="task", project_id=moved_task.project_id,
                     ))
-                return {"ok": result is not None}
+                return {"ok": moved_task is not None}
 
             case "convert_task_to_project":
                 task_id_raw = args.get("task_id")
                 if not task_id_raw:
                     return {"ok": False, "error": "task_id required"}
                 try:
-                    result = await task_svc.convert_task_to_project(db, task_id_raw, session_id)
+                    converted = await task_svc.convert_task_to_project(db, task_id_raw, session_id)
                 except IntegrityError:
                     return {"ok": False, "error": "a project with that title already exists"}
-                if not result:
+                if not converted:
                     return {"ok": False, "error": "task not found"}
-                state.touch(EntityRef(id=result.id, title=result.title, kind="project"))
-                return {"ok": True, "id": result.id, "title": result.title}
+                state.touch(EntityRef(id=converted.id, title=converted.title, kind="project"))
+                return {"ok": True, "id": converted.id, "title": converted.title}
 
             case "ask_clarification":
                 await publish(

@@ -25,9 +25,9 @@ interface Store {
   createProject: (title: string) => Promise<void>;
 }
 
-// M4: agentThinking is set on transcript.final but only cleared by tool/entity events.
-// If the agent responds with speech only (no tool call), nothing clears it — board freezes.
-// This timer auto-clears after 12s as a fallback.
+// agentThinking is set on transcript.final but only cleared by tool/entity events.
+// If the agent responds with speech only (no tool call), nothing clears it — UI freezes.
+// This timer auto-clears the flag after 12 s as a fallback.
 let _thinkingTimer: ReturnType<typeof setTimeout> | null = null;
 
 function _clearThinkingTimer() {
@@ -166,8 +166,9 @@ export const useStore = create<Store>((set, get) => ({
   applyEvent: (event) => {
     if (event.type === "ping") return;
 
-    const state = get();
-    set({ debugEvents: [...state.debugEvents, event].slice(-100) });
+    // Functional updaters ensure each set() reads live state rather than a snapshot
+    // captured once at the top — prevents burst events from clobbering each other.
+    set((s) => ({ debugEvents: [...s.debugEvents, event].slice(-100) }));
 
     switch (event.type) {
       case "transcript.partial":
@@ -194,65 +195,68 @@ export const useStore = create<Store>((set, get) => ({
         break;
 
       case "tool.started":
-        set({ actions: addAction(state.actions, event), clarification: null });
+        set((s) => ({ actions: addAction(s.actions, event), clarification: null }));
         break;
 
       case "tool.completed":
         _clearThinkingTimer();
-        set({ agentThinking: false, actions: addAction(state.actions, event) });
+        set((s) => ({ agentThinking: false, actions: addAction(s.actions, event) }));
         break;
 
       case "tool.failed":
         _clearThinkingTimer();
-        set({ agentThinking: false, actions: addAction(state.actions, event) });
+        set((s) => ({ agentThinking: false, actions: addAction(s.actions, event) }));
         break;
 
       case "project.created": {
         _clearThinkingTimer();
         const p = event.data.project as Project;
-        const already = state.projects.find((x) => x.id === p.id);
-        set({
-          projects: already ? state.projects.map((x) => (x.id === p.id ? p : x)) : [...state.projects, p],
+        set((s) => ({
+          projects: s.projects.find((x) => x.id === p.id)
+            ? s.projects.map((x) => (x.id === p.id ? p : x))
+            : [...s.projects, p],
           agentThinking: false,
-          actions: addAction(state.actions, event),
-        });
+          actions: addAction(s.actions, event),
+        }));
         break;
       }
 
       case "project.updated": {
         _clearThinkingTimer();
         const p = event.data.project as Project;
-        set({
-          projects: state.projects.map((x) => (x.id === p.id ? p : x)),
+        set((s) => ({
+          projects: s.projects.map((x) => (x.id === p.id ? p : x)),
           agentThinking: false,
-          actions: addAction(state.actions, event),
-        });
+          actions: addAction(s.actions, event),
+        }));
         break;
       }
 
       case "project.deleted": {
         _clearThinkingTimer();
         const id = event.data.id as string;
-        set({
-          projects: state.projects.filter((x) => x.id !== id),
-          tasks: state.tasks.map((t) =>
+        set((s) => ({
+          projects: s.projects.filter((x) => x.id !== id),
+          tasks: s.tasks.map((t) =>
             t.project_id === id ? { ...t, project_id: null } : t
           ),
-          selectedProjectId: state.selectedProjectId === id ? null : state.selectedProjectId,
+          selectedProjectId: s.selectedProjectId === id ? null : s.selectedProjectId,
           agentThinking: false,
-          actions: addAction(state.actions, event),
-        });
+          actions: addAction(s.actions, event),
+        }));
         break;
       }
 
       case "task.created": {
         _clearThinkingTimer();
         const t = event.data.task as Task;
-        const already = state.tasks.find((x) => x.id === t.id);
-        set({
-          tasks: already ? state.tasks.map((x) => (x.id === t.id ? t : x)) : [...state.tasks, t],
-          agentThinking: false,
-          actions: addAction(state.actions, event),
+        set((s) => {
+          const already = s.tasks.find((x) => x.id === t.id);
+          return {
+            tasks: already ? s.tasks.map((x) => (x.id === t.id ? t : x)) : [...s.tasks, t],
+            agentThinking: false,
+            actions: addAction(s.actions, event),
+          };
         });
         break;
       }
@@ -260,22 +264,22 @@ export const useStore = create<Store>((set, get) => ({
       case "task.updated": {
         _clearThinkingTimer();
         const t = event.data.task as Task;
-        set({
-          tasks: state.tasks.map((x) => (x.id === t.id ? t : x)),
+        set((s) => ({
+          tasks: s.tasks.map((x) => (x.id === t.id ? t : x)),
           agentThinking: false,
-          actions: addAction(state.actions, event),
-        });
+          actions: addAction(s.actions, event),
+        }));
         break;
       }
 
       case "task.deleted": {
         _clearThinkingTimer();
         const id = event.data.id as string;
-        set({
-          tasks: state.tasks.filter((x) => x.id !== id),
+        set((s) => ({
+          tasks: s.tasks.filter((x) => x.id !== id),
           agentThinking: false,
-          actions: addAction(state.actions, event),
-        });
+          actions: addAction(s.actions, event),
+        }));
         break;
       }
 
@@ -284,13 +288,15 @@ export const useStore = create<Store>((set, get) => ({
         const t = event.data.task as Task;
         const fromId = event.data.from_project_id as string | null;
         const toId = event.data.to_project_id as string | null;
-        const fromTitle = state.projects.find((p) => p.id === fromId)?.title ?? "Unassigned";
-        const toTitle = state.projects.find((p) => p.id === toId)?.title ?? "Unassigned";
-        const movedSummary = `Moved "${t.title}" from ${fromTitle} → ${toTitle}`;
-        set({
-          tasks: state.tasks.map((x) => (x.id === t.id ? t : x)),
-          agentThinking: false,
-          actions: addAction(state.actions, event, movedSummary),
+        set((s) => {
+          const fromTitle = s.projects.find((p) => p.id === fromId)?.title ?? "Unassigned";
+          const toTitle = s.projects.find((p) => p.id === toId)?.title ?? "Unassigned";
+          const movedSummary = `Moved "${t.title}" from ${fromTitle} → ${toTitle}`;
+          return {
+            tasks: s.tasks.map((x) => (x.id === t.id ? t : x)),
+            agentThinking: false,
+            actions: addAction(s.actions, event, movedSummary),
+          };
         });
         break;
       }
