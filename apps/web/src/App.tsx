@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePipecatSession } from "./hooks/usePipecatSession";
 import { useEventStream } from "./hooks/useEventStream";
 import { useStore } from "./hooks/useStore";
@@ -14,17 +14,31 @@ import { ThemeToggle } from "./components/ThemeToggle";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import imgUrl from "/vox.svg";
 
+function useClientId(): string {
+  const [clientId] = useState(() => {
+    const KEY = "vox-pm-client-id";
+    const stored = localStorage.getItem(KEY);
+    if (stored) return stored;
+    const id = crypto.randomUUID();
+    localStorage.setItem(KEY, id);
+    return id;
+  });
+  return clientId;
+}
+
 export default function App() {
-  const { status, sessionId, error, muted, start, stop, toggleMic } = usePipecatSession();
-  const { loadInitialState, applyEvent } = useStore();
+  const { status, error, muted, start, stop, toggleMic } = usePipecatSession();
+  const applyEvent = useStore((s) => s.applyEvent);
+  const loadInitialState = useStore((s) => s.loadInitialState);
   const { theme, setTheme } = useTheme();
   const { enabled: debugEnabled, toggle: toggleDebug } = useDebugEnabled();
+  const clientId = useClientId();
 
   useEffect(() => {
     void loadInitialState();
   }, [loadInitialState]);
 
-  useEventStream(sessionId, applyEvent);
+  useEventStream(clientId, applyEvent, loadInitialState);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -38,6 +52,8 @@ export default function App() {
             <TooltipTrigger asChild>
               <button
                 onClick={toggleDebug}
+                aria-label={debugEnabled ? "Hide debug panel" : "Show debug panel"}
+                aria-pressed={debugEnabled}
                 className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors text-xs font-bold ${
                   debugEnabled
                     ? "bg-primary/15 text-primary"
@@ -55,17 +71,14 @@ export default function App() {
         </header>
 
         <div className="flex-1 flex overflow-hidden">
-          {/* Left sidebar — project nav */}
           <aside className="hidden lg:flex flex-col w-56 xl:w-60 border-r border-border bg-card shrink-0">
             <Sidebar />
           </aside>
 
-          {/* Main — task list for selected project */}
           <main className="flex-1 overflow-y-auto scrollbar-thin">
             <TaskPane />
           </main>
 
-          {/* Right sidebar — voice + agent actions */}
           <aside className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border bg-card shrink-0 overflow-hidden">
             <div className="shrink-0 p-4 border-b border-border space-y-3">
               <VoiceControl
@@ -85,7 +98,7 @@ export default function App() {
             </div>
 
             <div className="shrink-0">
-              <DebugPanel />
+              <DebugPanel enabled={debugEnabled} />
             </div>
           </aside>
         </div>

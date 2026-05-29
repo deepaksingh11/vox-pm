@@ -6,6 +6,7 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from loguru import logger
 
 from vox_pm.agent.pipeline import run_pipeline
 from vox_pm.config import get_settings
@@ -13,12 +14,24 @@ from vox_pm.schemas import SessionCreateResponse
 
 router = APIRouter()
 
-# Track running sessions so we can cancel on explicit disconnect
 _active_sessions: dict[str, asyncio.Task] = {}
+_session_rooms: dict[str, str] = {}  # session_id → room_name for cleanup
 
 
-async def _create_daily_room(api_key: str) -> tuple[str, str, str]:
-    """Creates a Daily room and returns (room_url, bot_token, user_token)."""
+async def _delete_daily_room(api_key: str, room_name: str) -> None:
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.delete(
+                f"https://api.daily.co/v1/rooms/{room_name}",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10,
+            )
+    except Exception as exc:
+        logger.warning(f"Failed to delete Daily room {room_name}: {exc}")
+
+
+async def _create_daily_room(api_key: str) -> tuple[str, str, str, str]:
+    """Returns (room_url, bot_token, user_token, room_name)."""
     async with httpx.AsyncClient() as client:
         r = await client.post(
             "https://api.daily.co/v1/rooms",
@@ -31,7 +44,6 @@ async def _create_daily_room(api_key: str) -> tuple[str, str, str]:
         room_url = room["url"]
         room_name = room["name"]
 
-        # Bot token — owner privileges for Pipecat pipeline
         bot_t = await client.post(
             "https://api.daily.co/v1/meeting-tokens",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -41,7 +53,6 @@ async def _create_daily_room(api_key: str) -> tuple[str, str, str]:
         bot_t.raise_for_status()
         bot_token = bot_t.json()["token"]
 
-        # User token — participant for the browser
         user_t = await client.post(
             "https://api.daily.co/v1/meeting-tokens",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -51,7 +62,7 @@ async def _create_daily_room(api_key: str) -> tuple[str, str, str]:
         user_t.raise_for_status()
         user_token = user_t.json()["token"]
 
-    return room_url, bot_token, user_token
+    return room_url, bot_token, user_token, room_name
 
 
 @router.post("/session", response_model=SessionCreateResponse)
@@ -61,11 +72,13 @@ async def create_session():
         raise HTTPException(status_code=503, detail="Daily API key not configured")
 
     try:
-        room_url, bot_token, user_token = await _create_daily_room(settings.daily_api_key)
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Daily API error: {e}") from e
+        room_url, bot_token, user_token, room_name = await _create_daily_room(settings.daily_api_key)
+    except httpx.HTTPError:
+        # M9: don't expose raw httpx error (may include request URL / auth headers)
+        raise HTTPException(status_code=502, detail="Voice service unavailable") from None
 
     session_id = str(uuid.uuid4())
+    _session_rooms[session_id] = room_name
 
     pipeline_task = asyncio.create_task(
         run_pipeline(session_id, room_url, bot_token),
@@ -75,6 +88,10 @@ async def create_session():
 
     def _cleanup(t: asyncio.Task):
         _active_sessions.pop(session_id, None)
+        room = _session_rooms.pop(session_id, None)
+        if room:
+            # M9: delete the Daily room when the pipeline exits (normal or error)
+            asyncio.create_task(_delete_daily_room(settings.daily_api_key, room))
         if not t.cancelled() and t.exception():
             import traceback
             print(f"\n[pipeline error] session={session_id}")
@@ -90,3 +107,4 @@ async def end_session(session_id: str):
     task = _active_sessions.pop(session_id, None)
     if task and not task.done():
         task.cancel()
+    # Room deletion happens in _cleanup callback once the task finishes cancelling

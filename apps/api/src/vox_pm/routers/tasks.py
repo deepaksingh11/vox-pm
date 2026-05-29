@@ -20,7 +20,7 @@ async def list_tasks(
 async def get_task(task_id: str, db: AsyncSession = Depends(get_session)):
     task = await svc.get_task(db, task_id)
     if not task:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Task not found")
     return TaskRead.model_validate(task)
 
 
@@ -38,13 +38,31 @@ async def create_task(body: TaskCreate, db: AsyncSession = Depends(get_session))
 
 
 @router.patch("/{task_id}", response_model=TaskRead)
-async def update_task(
-    task_id: str, body: TaskUpdate, db: AsyncSession = Depends(get_session)
-):
-    fields = body.model_dump(exclude_none=True)
-    result = await svc.update_task(db, task_id, **fields)
-    if not result:
-        raise HTTPException(status_code=404)
+async def update_task(task_id: str, body: TaskUpdate, db: AsyncSession = Depends(get_session)):
+    # exclude_unset so explicit null clears nullable fields; exclude_none would drop them
+    fields = body.model_dump(exclude_unset=True)
+
+    if not fields:
+        task = await svc.get_task(db, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return TaskRead.model_validate(task)
+
+    result: TaskRead | None = None
+
+    # project_id must go through move_task to recompute position; direct setattr skips it
+    if "project_id" in fields:
+        result = await svc.move_task(db, task_id, fields.pop("project_id"))
+        if not result:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+    if fields:
+        result = await svc.update_task(db, task_id, **fields)
+        if not result:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     return result
 
 
@@ -52,4 +70,4 @@ async def update_task(
 async def delete_task(task_id: str, db: AsyncSession = Depends(get_session)):
     ok = await svc.delete_task(db, task_id)
     if not ok:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Task not found")

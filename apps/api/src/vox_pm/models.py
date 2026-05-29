@@ -29,8 +29,12 @@ class Project(SQLModel, table=True):
 class Task(SQLModel, table=True):
     __tablename__ = "tasks"
     __table_args__ = (
-        # Covers: WHERE project_id = X ORDER BY position, created_at
         Index("ix_tasks_project_position", "project_id", "position", "created_at"),
+        # PostgreSQL treats (NULL, 5) as distinct from other (NULL, 5) rows in unique
+        # constraints, so this only enforces uniqueness within real projects — not the
+        # unassigned bucket. create_all won't add this to an existing table; recreate
+        # the DB or: ALTER TABLE tasks ADD CONSTRAINT uq_tasks_project_position UNIQUE (project_id, position);
+        UniqueConstraint("project_id", "position", name="uq_tasks_project_position"),
     )
 
     id: str = Field(default_factory=_uuid, primary_key=True)

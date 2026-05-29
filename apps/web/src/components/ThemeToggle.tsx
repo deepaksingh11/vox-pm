@@ -17,7 +17,7 @@ export function ThemeToggle({ theme, onSetTheme }: Props) {
   return (
     <button
       onClick={() => onSetTheme(next)}
-      title={`${labels[theme]} — click to switch`}
+      aria-label={`Theme: ${labels[theme]} — click to switch`}
       className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
     >
       <Icon size={15} />

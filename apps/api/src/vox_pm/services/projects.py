@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, update
 
@@ -22,14 +23,21 @@ async def create_project(
     title: str,
     session_id: str = "default",
 ) -> ProjectRead:
-    # Idempotent: return existing project if same title already exists (handles LLM retry after cancel)
     existing = await session.exec(select(Project).where(Project.title == title))
     if project := existing.first():
         return ProjectRead.model_validate(project)
 
     project = Project(title=title)
     session.add(project)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # M7: concurrent request won the uq_projects_title race — fetch the winner
+        await session.rollback()
+        result = await session.exec(select(Project).where(Project.title == title))
+        project = result.first()
+        return ProjectRead.model_validate(project)
+
     await session.refresh(project)
     read = ProjectRead.model_validate(project)
     await publish(session_id, "project.created", {"project": read.model_dump(mode="json")})

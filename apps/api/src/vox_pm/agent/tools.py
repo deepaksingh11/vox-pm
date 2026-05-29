@@ -1,10 +1,11 @@
 """Tool definitions and handlers for the PM agent."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
+from sqlalchemy.exc import IntegrityError
 
 from vox_pm.agent.state import EntityRef, SessionState, get_state
 from vox_pm.db import get_session_factory
@@ -13,7 +14,6 @@ from vox_pm.services import projects as project_svc
 from vox_pm.services import tasks as task_svc
 
 
-# Legacy dict format kept for register_function() name iteration only
 TOOL_DEFINITIONS = [
     {
         "name": "create_project",
@@ -126,7 +126,6 @@ TOOL_DEFINITIONS = [
     },
 ]
 
-# ToolsSchema used by all LLM providers (Pipecat 1.2+)
 TOOLS_SCHEMA = ToolsSchema(
     standard_tools=[
         FunctionSchema(
@@ -144,9 +143,25 @@ def _parse_dt(val: str | None) -> datetime | None:
     if not val:
         return None
     try:
-        return datetime.fromisoformat(val.replace("Z", "+00:00")).replace(tzinfo=None)
+        dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+        # Convert to UTC before stripping tzinfo — .replace(tzinfo=None) alone drops the
+        # offset without converting, so "09:00+05:30" would be stored as 09:00 not 03:30.
+        from datetime import UTC
+        return dt.astimezone(UTC).replace(tzinfo=None)
     except ValueError:
-        return None
+        raise ValueError(f"invalid datetime {val!r} — expected ISO 8601")
+
+
+def _resolve_ref(state: SessionState, key: str, args: dict) -> str | None | bool:
+    """Resolve args[key] alias → UUID.
+
+    Returns False if key absent (caller skips).
+    Returns None if alias-shaped but not in map (unknown reference — caller must error).
+    Returns the resolved UUID string otherwise.
+    """
+    if key not in args or not isinstance(args[key], str):
+        return False
+    return state.resolve_id(args[key])
 
 
 async def dispatch_tool(
@@ -154,13 +169,15 @@ async def dispatch_tool(
     args: dict[str, Any],
     session_id: str,
 ) -> dict[str, Any]:
-    """Execute a tool call. Returns result dict for LLM context."""
     state = get_state(session_id)
 
-    # Resolve short aliases (P1, T3, …) → full UUIDs in any id field
     for key in ("id", "task_id", "project_id"):
-        if key in args and isinstance(args[key], str):
-            args[key] = state.resolve_id(args[key])
+        resolved = _resolve_ref(state, key, args)
+        if resolved is False:
+            continue
+        if resolved is None:
+            return {"ok": False, "error": f"unknown reference: {args[key]!r} — not in current workspace"}
+        args[key] = resolved
 
     factory = get_session_factory()
 
@@ -181,7 +198,7 @@ async def dispatch_tool(
 
             case "delete_project":
                 ok = await project_svc.delete_project(db, args["id"], session_id)
-                if state.current_project_id == args["id"]:
+                if ok and state.current_project_id == args["id"]:
                     state.current_project_id = None
                 return {"ok": ok}
 
@@ -237,12 +254,12 @@ async def dispatch_tool(
                 task_id_raw = args.get("task_id")
                 if not task_id_raw:
                     return {"ok": False, "error": "task_id required"}
-                task = await task_svc.get_task(db, task_id_raw)
-                if not task:
+                try:
+                    result = await task_svc.convert_task_to_project(db, task_id_raw, session_id)
+                except IntegrityError:
+                    return {"ok": False, "error": "a project with that title already exists"}
+                if not result:
                     return {"ok": False, "error": "task not found"}
-                title = task.title
-                await task_svc.delete_task(db, task_id_raw, session_id)
-                result = await project_svc.create_project(db, title, session_id)
                 state.touch(EntityRef(id=result.id, title=result.title, kind="project"))
                 return {"ok": True, "id": result.id, "title": result.title}
 

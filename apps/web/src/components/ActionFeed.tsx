@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useStore } from "../hooks/useStore";
 import { cn } from "../lib/utils";
@@ -16,6 +17,15 @@ const typeConfig: Partial<Record<ActionEntry["type"], { dot: string; label: stri
   "task.moved": { dot: "bg-amber-500", label: "Task moved" },
   "clarification.ask": { dot: "bg-violet-500", label: "Clarification asked" },
 };
+
+// L3: tick so formatDistanceToNow updates without a full page re-render
+function useTick(intervalMs: number) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+}
 
 function ActionItem({ action }: { action: ActionEntry }) {
   const cfg = typeConfig[action.type];
@@ -37,6 +47,7 @@ function ActionItem({ action }: { action: ActionEntry }) {
 
 export function ActionFeed() {
   const actions = useStore((s) => s.actions);
+  useTick(60_000);
 
   return (
     <div className="flex flex-col">
@@ -48,7 +59,7 @@ export function ActionFeed() {
           <p className="text-xs text-muted-foreground/50 text-center">Actions appear here as the agent works</p>
         </div>
       ) : (
-        <ul>
+        <ul aria-live="polite" aria-label="Agent actions">
           {actions.map((a) => (
             <ActionItem key={a.id} action={a} />
           ))}

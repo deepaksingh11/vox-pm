@@ -25,7 +25,14 @@ interface Store {
   createProject: (title: string) => Promise<void>;
 }
 
-let _actionCounter = 0;
+// M4: agentThinking is set on transcript.final but only cleared by tool/entity events.
+// If the agent responds with speech only (no tool call), nothing clears it — board freezes.
+// This timer auto-clears after 12s as a fallback.
+let _thinkingTimer: ReturnType<typeof setTimeout> | null = null;
+
+function _clearThinkingTimer() {
+  if (_thinkingTimer) { clearTimeout(_thinkingTimer); _thinkingTimer = null; }
+}
 
 function summarize(event: WSEvent): string {
   const d = event.data;
@@ -73,8 +80,26 @@ export const useStore = create<Store>((set, get) => ({
   loadInitialState: async () => {
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        const [projects, tasks] = await Promise.all([api.projects.list(), api.tasks.list()]);
-        set({ projects, tasks });
+        const [serverProjects, serverTasks] = await Promise.all([
+          api.projects.list(),
+          api.tasks.list(),
+        ]);
+        // Merge by id rather than overwrite — a live task.created event that lands
+        // before this response would otherwise be wiped by set({tasks}).
+        set((s) => {
+          const serverProjectIds = new Set(serverProjects.map((p) => p.id));
+          const serverTaskIds = new Set(serverTasks.map((t) => t.id));
+          return {
+            projects: [
+              ...serverProjects,
+              ...s.projects.filter((p) => !serverProjectIds.has(p.id)),
+            ],
+            tasks: [
+              ...serverTasks,
+              ...s.tasks.filter((t) => !serverTaskIds.has(t.id)),
+            ],
+          };
+        });
         return;
       } catch {
         if (attempt < 4) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
@@ -89,29 +114,44 @@ export const useStore = create<Store>((set, get) => ({
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
     const newStatus = task.status === "done" ? "open" : "done";
+    const prevTasks = tasks;
     set({ tasks: tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)) });
-    void api.tasks.update(taskId, { status: newStatus });
+    void api.tasks.update(taskId, { status: newStatus }).catch(() => {
+      set({ tasks: prevTasks });
+    });
   },
 
   deleteTask: (taskId) => {
-    set({ tasks: get().tasks.filter((t) => t.id !== taskId) });
-    void api.tasks.delete(taskId);
+    const prevTasks = get().tasks;
+    set({ tasks: prevTasks.filter((t) => t.id !== taskId) });
+    void api.tasks.delete(taskId).catch(() => {
+      set({ tasks: prevTasks });
+    });
   },
 
   deleteProject: (projectId) => {
-    const { selectedProjectId } = get();
+    const { selectedProjectId, projects, tasks } = get();
+    const prevProjects = projects;
+    const prevTasks = tasks;
+    const prevSelected = selectedProjectId;
     set({
-      projects: get().projects.filter((p) => p.id !== projectId),
-      tasks: get().tasks.map((t) =>
+      projects: projects.filter((p) => p.id !== projectId),
+      tasks: tasks.map((t) =>
         t.project_id === projectId ? { ...t, project_id: null } : t
       ),
       selectedProjectId: selectedProjectId === projectId ? null : selectedProjectId,
     });
-    void api.projects.delete(projectId);
+    void api.projects.delete(projectId).catch(() => {
+      set({ projects: prevProjects, tasks: prevTasks, selectedProjectId: prevSelected });
+    });
   },
 
   renameProject: (projectId, title) => {
-    void api.projects.update(projectId, { title });
+    const prevProjects = get().projects;
+    set({ projects: prevProjects.map((p) => p.id === projectId ? { ...p, title } : p) });
+    void api.projects.update(projectId, { title }).catch(() => {
+      set({ projects: prevProjects });
+    });
   },
 
   createProject: async (title) => {
@@ -135,6 +175,8 @@ export const useStore = create<Store>((set, get) => ({
         break;
 
       case "transcript.final":
+        _clearThinkingTimer();
+        _thinkingTimer = setTimeout(() => { set({ agentThinking: false }); _thinkingTimer = null; }, 12_000);
         set({
           finalTranscript: event.data.text as string,
           partialTranscript: "",
@@ -147,6 +189,7 @@ export const useStore = create<Store>((set, get) => ({
         break;
 
       case "agent.error":
+        _clearThinkingTimer();
         set({ agentThinking: false });
         break;
 
@@ -155,14 +198,17 @@ export const useStore = create<Store>((set, get) => ({
         break;
 
       case "tool.completed":
+        _clearThinkingTimer();
         set({ agentThinking: false, actions: addAction(state.actions, event) });
         break;
 
       case "tool.failed":
+        _clearThinkingTimer();
         set({ agentThinking: false, actions: addAction(state.actions, event) });
         break;
 
       case "project.created": {
+        _clearThinkingTimer();
         const p = event.data.project as Project;
         const already = state.projects.find((x) => x.id === p.id);
         set({
@@ -174,6 +220,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       case "project.updated": {
+        _clearThinkingTimer();
         const p = event.data.project as Project;
         set({
           projects: state.projects.map((x) => (x.id === p.id ? p : x)),
@@ -184,6 +231,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       case "project.deleted": {
+        _clearThinkingTimer();
         const id = event.data.id as string;
         set({
           projects: state.projects.filter((x) => x.id !== id),
@@ -198,6 +246,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       case "task.created": {
+        _clearThinkingTimer();
         const t = event.data.task as Task;
         const already = state.tasks.find((x) => x.id === t.id);
         set({
@@ -209,6 +258,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       case "task.updated": {
+        _clearThinkingTimer();
         const t = event.data.task as Task;
         set({
           tasks: state.tasks.map((x) => (x.id === t.id ? t : x)),
@@ -219,6 +269,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       case "task.deleted": {
+        _clearThinkingTimer();
         const id = event.data.id as string;
         set({
           tasks: state.tasks.filter((x) => x.id !== id),
@@ -229,6 +280,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       case "task.moved": {
+        _clearThinkingTimer();
         const t = event.data.task as Task;
         const fromId = event.data.from_project_id as string | null;
         const toId = event.data.to_project_id as string | null;
@@ -244,6 +296,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       case "clarification.ask":
+        _clearThinkingTimer();
         set({
           clarification: {
             question: event.data.question as string,
@@ -260,12 +313,15 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   clearClarification: () => set({ clarification: null }),
-  clearAgentState: () => set({ agentThinking: false, clarification: null, partialTranscript: "", finalTranscript: "" }),
+  clearAgentState: () => {
+    _clearThinkingTimer();
+    set({ agentThinking: false, clarification: null, partialTranscript: "", finalTranscript: "" });
+  },
 }));
 
 function addAction(actions: ActionEntry[], event: WSEvent, summaryOverride?: string): ActionEntry[] {
   const entry: ActionEntry = {
-    id: String(++_actionCounter),
+    id: crypto.randomUUID(),
     type: event.type as ActionEntry["type"],
     ts: event.ts,
     summary: summaryOverride ?? summarize(event),

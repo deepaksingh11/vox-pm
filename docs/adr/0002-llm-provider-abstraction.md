@@ -11,5 +11,5 @@
 - Pipecat ships first-class services for both; wrapping is thin
 
 **Consequences:**
-- Tool definitions must be maintained in both Anthropic and OpenAI formats (`TOOL_DEFINITIONS` and `OPENAI_TOOL_DEFINITIONS` in `tools.py`)
-- Claude's tool-calling is generally more reliable for multi-step instructions; default Anthropic if both keys present
+- A single `TOOL_DEFINITIONS` list + `TOOLS_SCHEMA` (Pipecat `ToolsSchema`) is shared across all providers; no per-provider format duplication.
+- Claude's tool-calling is generally more reliable for multi-step instructions; default Anthropic if both keys present.

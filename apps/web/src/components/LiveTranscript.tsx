@@ -8,7 +8,7 @@ export function LiveTranscript() {
   if (!partial && !final && !thinking) return null;
 
   return (
-    <div className="bg-muted/60 border border-border rounded-xl px-4 py-3 text-sm min-h-[52px] space-y-1">
+    <div aria-live="polite" aria-label="Live transcript" className="bg-muted/60 border border-border rounded-xl px-4 py-3 text-sm min-h-[52px] space-y-1">
       {final && (
         <p className="text-foreground leading-relaxed">
           <span className="text-muted-foreground text-xs font-medium mr-1.5">You</span>

@@ -15,7 +15,7 @@ export function ClarificationPrompt() {
         {clarification.candidates.length > 0 && (
           <ul className="mt-2 space-y-1">
             {clarification.candidates.map((c, i) => (
-              <li key={i} className="text-xs text-accent-foreground/80 flex items-center gap-1.5">
+              <li key={c} className="text-xs text-accent-foreground/80 flex items-center gap-1.5">
                 <span className="w-4 h-4 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
                   {i + 1}
                 </span>

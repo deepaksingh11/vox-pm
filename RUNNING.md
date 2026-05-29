@@ -26,7 +26,11 @@ pnpm install
 pnpm dev
 ```
 
-Tables are auto-created on first startup. No manual migration needed.
+Tables are auto-created on first startup. If you have an existing DB from a previous run, recreate it or run:
+```sql
+ALTER TABLE tasks ADD CONSTRAINT uq_tasks_project_position UNIQUE (project_id, position);
+```
+(The `UniqueConstraint` added to `models.py` won't apply to existing tables via `create_all`.)
 
 - API → http://localhost:8000
 - Swagger docs → http://localhost:8000/docs

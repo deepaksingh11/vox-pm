@@ -101,6 +101,34 @@ Expected end state:
 
 ---
 
+## R10 — Fix regression checks
+
+### Alias stability (C1/C2)
+- [ ] Create 3 tasks in a project (T1, T2, T3 assigned). Delete T1. Say "mark T3 done" — confirm T3 (review task) is marked, not a different task
+- [ ] Say a made-up alias ("update T99") → agent responds with "unknown reference" error, no silent no-op
+
+### Event routing without voice session (C3/C4)
+- [ ] Without starting a voice session: rename a project via sidebar → sidebar updates immediately (no reload)
+- [ ] Toggle a task done → checkbox updates; if API fails, it reverts
+- [ ] Open second browser tab → manual changes in one tab appear in the other
+
+### Nullable field clearing (H1)
+- [ ] Add a due date to a task. Say "remove the due date" → date chip disappears from task row, DB `due_at` is null
+- [ ] Add a reminder. Say "clear the reminder" → bell chip gone
+
+### Position uniqueness (H2)
+- [ ] Say "add 5 tasks quickly: A B C D E" — all 5 appear with unique positions, correct order
+
+### Atomic convert (H4)
+- [ ] Simulate project title collision: create project "Alpha", then say "make the Alpha task a project" → if title conflicts, task survives unchanged (no data loss)
+
+### Reconnect resync (H7/H8)
+- [ ] During active session: disconnect network for 5s, reconnect → UI reconciles with DB state, no duplicate or missing items
+- [ ] Backoff visible: open DevTools WS, force-close, verify reconnect intervals grow (not fixed 2s)
+
+### agentThinking auto-clear (M4)
+- [ ] Ask a question that gets a voice-only reply (no tool call, e.g. "what's on my list?") → task pane unfreezes within 12 seconds without any tool event
+
 ## Bug log
 
 <!--

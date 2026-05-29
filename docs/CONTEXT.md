@@ -6,7 +6,7 @@
 
 **Task** — a unit of work. Has title, optional project, urgency flag, due date, reminder time, status (open/done), position. Position enables ordinal references ("the first task").
 
-**Session** — one voice conversation. `session_id` shared between Pipecat pipeline (backend) and WS event stream (frontend). In-memory per process; stateless across restarts. Two termination modes: (1) **intentional** — user clicks "End session" → `DELETE /api/voice/session/{id}` → pipeline cancelled, no resume; (2) **unintentional** (network blip) — WS disconnects but pipeline keeps running, frontend reconnects within 2s to same `session_id` and re-subscribes. Events published during the reconnect window are lost.
+**Session** — one voice conversation. `session_id` is the Pipecat pipeline identifier (backend); it is separate from the browser's stable `client_id` (localStorage, used for the persistent WS connection). In-memory per process; stateless across restarts. Session state (`SessionState`, alias map) is cleaned up in a `finally` block when the pipeline exits. Two termination modes: (1) **intentional** — user clicks "End session" → `DELETE /api/voice/session/{id}` → pipeline cancelled, Daily room deleted; (2) **unintentional** (network blip) — WS disconnects, frontend reconnects with exponential backoff (1 s→30 s cap), then calls `loadInitialState` to reconcile entity state from REST (merge by id, server copy wins). Events queued in the bus during the disconnection window are not replayed, but DB state is the source of truth — `loadInitialState` on reconnect recovers it.
 
 **Agent** — the Pipecat pipeline's LLM component (Claude Sonnet 4.6). Receives finalized transcripts, emits tool calls against the service layer, speaks confirmation via Cartesia TTS.
 
@@ -17,13 +17,13 @@
 ## Domain Rules
 
 - A task can exist without a project (orphaned/unassigned). Created when a project is deleted — tasks are reparented to `project_id=null` rather than cascade-deleted. Orphans are DB-only artifacts: excluded from workspace snapshot (LLM can't see or act on them), not rendered in UI (no unassigned view). Inbox concept removed.
-- Moving a task to a project updates its `project_id`; position = end of target list. Position is append-only — no reordering in v1. Ordinal refs ("the first task") resolve by insertion order.
+- Moving a task to a project updates its `project_id`; position = end of target list via `MAX(position)+1`. Position is append-only — no reordering in v1. Ordinal refs ("the first task") resolve by insertion order. A `UniqueConstraint("project_id", "position")` prevents concurrent creates from colliding (retry on `IntegrityError`). Note: PostgreSQL treats `(NULL, n)` as distinct from other `(NULL, n)` rows in unique constraints, so the constraint applies only to project-scoped tasks.
 - Task status: `open` (default) | `in_progress` | `blocked` | `cancelled` | `done`. Agent can set any via `update_task`. UI checkbox toggles between done↔open (non-done → done; done → open). Status badges shown inline for `in_progress` (blue), `blocked` (orange), `cancelled` (muted).
 - Urgency: `urgent=true` → red badge in UI. Triggered by "urgent", "ASAP", "high priority".
 - Due dates and reminders stored as `TIMESTAMP WITHOUT TIME ZONE` (UTC, tzinfo stripped before insert).
 - Reminders stored only — no delivery mechanism in v1. Rendered as a bell chip in TaskRow UI. Future: worker polling `reminder_at < now` to push via WS/email.
-- "Convert task to project" = `delete_task` + `create_project` with same title (one tool call). LLM strips leading action verbs from the title using judgment (e.g. "Finalize the Q2 report" → "Q2 report") — no finite verb list.
-- `create_project` is idempotent by title — returns existing project if title matches (handles LLM retry after interrupted tool call).
+- "Convert task to project" = atomic single-commit operation: project created (flush → get id), task deleted, single commit. Failure before commit leaves the task intact. LLM strips leading action verbs from the title using judgment (e.g. "Finalize the Q2 report" → "Q2 report") — no finite verb list.
+- `create_project` is idempotent by title — returns existing project if title matches (handles LLM retry after interrupted tool call). On TOCTOU race (two concurrent creates with same title), catches `IntegrityError` on commit, rolls back, re-fetches the winner rather than returning a 500.
 - LLM receives today's date (UTC) in system prompt for correct relative date resolution ("Friday", "tomorrow morning").
 - Titles stored and displayed in sentence case (first word capitalized only). Enforced via system prompt rule.
 
@@ -33,7 +33,7 @@
 - `selectedProjectId` (UI) and `SessionState.current_project_id` (agent) are deliberately independent. UI selection is a visual concern; agent context is a voice conversation concern. The agent's context wins for ambiguous voice commands ("add a task" without a project name). `current_project_id` is updated by `touch()` on any project/task interaction; cleared immediately when that project is deleted (prevents FK violation on next create_task).
 - WebSocket (`/ws/events?session_id=`) = server-push only. Frontend never sends on WS.
 - Event bus = in-process `asyncio.Queue` per subscriber. No external broker. Events lost on process restart.
-- Frontend Zustand store = optimistic mutations for manual actions + WS event reducer for agent actions. Both paths are idempotent (dedupe by id).
+- Frontend Zustand store = optimistic mutations for manual actions + WS event reducer for agent actions. Both paths are idempotent (dedupe by id). Optimistic mutations (toggle, delete, rename) capture previous state and roll back on API failure — no diverged UI state on network error.
 - No RTVI — Daily.co WebRTC for audio only; all state events on the custom WS bus.
 
 ## System Prompt Design

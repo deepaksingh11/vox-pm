@@ -18,16 +18,19 @@ export function useDebugEnabled() {
   return { enabled, toggle };
 }
 
-export function DebugPanel() {
+// L5: accepts enabled as prop (from App.tsx which owns useDebugEnabled state)
+// so toggling debug is immediately reflected without waiting for a store update
+export function DebugPanel({ enabled }: { enabled: boolean }) {
   const [open, setOpen] = useState(false);
   const debugEvents = useStore((s) => s.debugEvents);
 
-  if (!isDebugEnabled()) return null;
+  if (!enabled) return null;
 
   return (
     <div className="border-t border-border">
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         className="w-full px-4 py-2 flex items-center justify-between text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
       >
         Debug events ({debugEvents.length})
@@ -39,7 +42,8 @@ export function DebugPanel() {
             <p className="text-muted-foreground/50">No events yet</p>
           ) : (
             [...debugEvents].reverse().map((e, i) => (
-              <div key={i} className="leading-relaxed">
+              // L2: composite key from ts+type — stable for existing events (not index-based)
+              <div key={`${e.ts}|${e.type}|${debugEvents.length - 1 - i}`} className="leading-relaxed">
                 <span className="text-muted-foreground/50">
                   {(() => { try { return new Date(e.ts).toISOString().slice(11, 23); } catch { return e.ts?.slice(0,12) ?? ""; } })()}
                 </span>{" "}

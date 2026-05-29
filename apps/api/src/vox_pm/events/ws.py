@@ -3,6 +3,7 @@
 import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from loguru import logger
 
 from vox_pm.events.bus import subscribe, unsubscribe
 
@@ -20,7 +21,10 @@ async def events_ws(websocket: WebSocket, session_id: str = "default"):
                 await websocket.send_text(event.model_dump_json())
             except asyncio.TimeoutError:
                 await websocket.send_text('{"type":"ping"}')
-    except (WebSocketDisconnect, Exception):
+    except WebSocketDisconnect:
         pass
+    except Exception as exc:
+        # M10: log unexpected errors so programming bugs aren't silently swallowed
+        logger.warning(f"ws session error: {exc}")
     finally:
         unsubscribe(session_id, q)

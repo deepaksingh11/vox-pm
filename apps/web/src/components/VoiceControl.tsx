@@ -50,13 +50,14 @@ export function VoiceControl({ status, isMuted, onStart, onStop, onToggleMic, er
         {isActive && (
           <button
             onClick={onToggleMic}
+            aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}
+            aria-pressed={isMuted}
             className={cn(
               "p-2.5 rounded-xl transition-colors",
               isMuted
                 ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
                 : "bg-muted hover:bg-muted/80 text-foreground"
             )}
-            title={isMuted ? "Unmute mic" : "Mute mic"}
           >
             {isMuted ? <MicOff size={15} /> : <Mic size={15} />}
           </button>
@@ -67,6 +68,7 @@ export function VoiceControl({ status, isMuted, onStart, onStop, onToggleMic, er
         <div className="flex items-center justify-center gap-1 h-6">
           {[0.4, 0.7, 1, 0.7, 0.9, 0.5, 0.8, 0.6, 1, 0.4].map((scale, i) => (
             <div
+              aria-hidden="true"
               key={i}
               className={cn("w-1 rounded-full", isMuted ? "bg-muted-foreground/30" : "bg-primary")}
               style={{

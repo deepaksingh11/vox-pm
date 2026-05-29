@@ -37,12 +37,14 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Vox PM API", lifespan=lifespan)
 
+    # M8: explicit methods/headers — allow_methods=["*"] with allow_credentials=True
+    # is dangerous if origins ever include "*" (browser would reflect it)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
     )
 
     app.include_router(projects.router, prefix="/api/projects", tags=["projects"])

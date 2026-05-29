@@ -25,12 +25,24 @@ def unsubscribe(session_id: str, q: asyncio.Queue) -> None:
 
 
 async def publish(session_id: str, event_type: EventType, data: dict) -> None:
+    # Broadcast to all subscribers regardless of session_id.
+    # REST routers publish to "default" while WS clients subscribe to voice-session UUIDs;
+    # per-session routing silently dropped all REST-originated events.
     event = WSEvent(type=event_type, ts=datetime.now(UTC), data=data)
-    dead: list[asyncio.Queue] = []
-    for q in list(_subscribers.get(session_id, [])):
-        try:
-            q.put_nowait(event)
-        except asyncio.QueueFull:
-            dead.append(q)
-    for q in dead:
-        unsubscribe(session_id, q)
+    dead: list[tuple[str, asyncio.Queue]] = []
+
+    for sid, queues in list(_subscribers.items()):
+        for q in list(queues):
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                # M2: drop oldest event to make room rather than permanently killing the subscriber.
+                # A slow client losing one old event is better than losing all future events.
+                try:
+                    q.get_nowait()
+                    q.put_nowait(event)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    dead.append((sid, q))
+
+    for sid, q in dead:
+        unsubscribe(sid, q)

@@ -3,10 +3,11 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 
 
 class LLMProviderBuilder(Protocol):
-    """Build a Pipecat LLM service wired with tool handlers."""
+    """Module-level build function signature shared by all LLM provider modules."""
 
-    def build(
+    def __call__(
         self,
         context: LLMContext,
         tool_handler: Any,
+        settings: Any,
     ): ...

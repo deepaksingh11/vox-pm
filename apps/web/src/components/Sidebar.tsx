@@ -104,6 +104,7 @@ export function Sidebar() {
             <div key={project.id} className="group relative mx-2">
               <button
                 onClick={() => setSelectedProject(project.id)}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors pr-8",
                   isActive

@@ -98,9 +98,9 @@ No RTVI. RTVI's event vocabulary is designed for chat bots; Vox PM's state event
 ---
 
 ### 4.3 Alias map (P1, T3) instead of UUIDs in the prompt
-**What**: `SessionState` assigns short aliases (`P1`, `P2`, `T1`, `T3`, …) to every entity. The workspace snapshot uses these aliases. The LLM emits them in tool arguments; the server resolves them to UUIDs before the DB call.
+**What**: `SessionState` assigns short aliases (`P1`, `P2`, `T1`, `T3`, …) to every entity. The workspace snapshot uses these aliases. The LLM emits them in tool arguments; the server resolves them to UUIDs before the DB call. **Aliases are stable for the session lifetime** — once assigned, never renumbered even if earlier entities are deleted. Unknown alias-shaped args not in the map are rejected before touching the DB.
 
-**Why**: UUIDs are 36 characters each. A workspace with 5 projects and 20 tasks would add ~1 KB of UUID noise to every prompt turn. Aliases cut that to ~40 characters. On long sessions with many tool calls, this meaningfully reduces cost and latency.
+**Why**: UUIDs are 36 characters each. A workspace with 5 projects and 20 tasks would add ~1 KB of UUID noise to every prompt turn. Aliases cut that to ~40 characters. On long sessions with many tool calls, this meaningfully reduces cost and latency. Alias stability prevents the silent wrong-entity delete that occurs when the map shifts after a deletion.
 
 ```
 WS:
@@ -128,9 +128,9 @@ P2 "Q2 Review"
 ---
 
 ### 4.5 Idempotent `create_project` — two-layer safety
-**What**: `create_project` first does `SELECT WHERE title = X`; if a match exists, returns it without re-inserting or re-publishing. DB also has `UniqueConstraint("title")`.
+**What**: `create_project` first does `SELECT WHERE title = X`; if a match exists, returns it without re-inserting or re-publishing. DB also has `UniqueConstraint("title")`. On a TOCTOU race (two concurrent creates both pass the SELECT), the loser catches `IntegrityError` on commit, rolls back, and re-fetches the winner — no 500, no duplicate.
 
-**Why**: When a user interrupts mid-TTS (barge-in), the pipeline's current tool sequence is abandoned. If the LLM retried `create_project("Q2 report")` after reconnecting, it would create a duplicate. The SELECT is the fast path; the unique constraint is the TOCTOU safety net for concurrent retries.
+**Why**: When a user interrupts mid-TTS (barge-in), the pipeline's current tool sequence is abandoned. If the LLM retried `create_project("Q2 report")` after reconnecting, it would create a duplicate. The SELECT is the fast path; the unique constraint + `IntegrityError` catch is the safety net for concurrent retries.
 
 > File: `apps/api/src/vox_pm/services/projects.py` → `create_project`
 
@@ -146,7 +146,7 @@ P2 "Q2 Review"
 ---
 
 ### 4.7 In-process asyncio pub/sub
-**What**: `events/bus.py` — `dict[session_id, list[asyncio.Queue(maxsize=256)]]`. `publish()` uses `put_nowait`; a full queue means the subscriber is dead/slow and gets evicted.
+**What**: `events/bus.py` — `dict[session_id, list[asyncio.Queue(maxsize=256)]]`. `publish()` **broadcasts to every subscriber** (single global workspace — per-session routing caused REST mutations to land in the wrong bucket). On `QueueFull`, drops the oldest event from the queue and inserts the new one, keeping the subscriber alive rather than permanently evicting it.
 
 **Why**: For a single-process, single-user app this is the right level of complexity — no Redis dependency, no serialization overhead, no network hop. The tradeoff (dies on horizontal scale) is acceptable for v1 and the replacement path is clear: swap `asyncio.Queue` for Redis Streams or NATS JetStream when needed.
 
@@ -243,7 +243,7 @@ These are out of scope for v1 but the architecture has clear seams for each:
 | **Spend caps** | None | Per-session token budget; kill-switch on anomalous Deepgram/Cartesia/Anthropic spend |
 | **Multi-user** | Global project namespace | Per-user data isolation; CRDT or operational-transform for collaborative editing |
 | **Multi-region latency** | Unoptimized | Pin Neon, Daily, Deepgram, Cartesia to same region per user (saves 100–200 ms per cross-region hop) |
-| **Daily room cleanup** | Relies on 1-hour TTL | Explicit `DELETE /rooms/:id` on session end; room reuse for reconnects |
+| **Daily room cleanup** | Explicit `DELETE /rooms/:id` via done-callback when pipeline task exits (normal or error) | Room reuse for reconnects |
 | **STT/TTS fallback** | Deepgram / Cartesia are single points of failure | Deepgram → Speechmatics / Whisper fallback; Cartesia → ElevenLabs fallback |
 
 ---
@@ -254,7 +254,6 @@ These are out of scope for v1 but the architecture has clear seams for each:
 - **Authentication** — single-user; no user table; no per-user data isolation.
 - **Transcript persistence** — conversation history is ephemeral.
 - **Undo stack** — "actually" corrections rely on prompt-driven LLM semantics, not a compensating-transaction log.
-- **Optimistic rollback** — failed client-side deletes leave the UI in a stale state (acceptable for v1).
 - **`clarification.resolved` server event** — UI dismisses the clarification prompt locally; no server-side wiring back into the LLM context. The LLM continues from the user's spoken reply naturally.
 - **Concurrent multi-user sessions** — `projects.title` is globally unique; two users sharing a DB would collide.
 

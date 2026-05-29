@@ -25,12 +25,14 @@ In-process pub/sub (asyncio) + WebSocket gateway.
 
 ## Architecture
 
-`bus.py` — `dict[session_id → list[asyncio.Queue]]`. `publish(session_id, type, data)` enqueues to all subscribers for that session. Full queues are pruned (dead consumer cleanup).
+`bus.py` — `dict[session_id → list[asyncio.Queue]]`. `publish()` **broadcasts to every subscriber across all session IDs** (single global workspace — per-session routing caused REST-originated events to land in the `"default"` bucket while WS clients subscribed to voice-session UUIDs). On `QueueFull`, drops the oldest event from the queue and inserts the new one (preserves the subscriber; loses one old event) rather than permanently evicting the slow subscriber.
 
-`ws.py` — FastAPI WebSocket route at `/ws/events?session_id=<id>`. Subscribes a queue on connect, streams events as JSON, unsubscribes on disconnect. Sends `{"type":"ping"}` every 30s to keep connection alive.
+`ws.py` — FastAPI WebSocket route at `/ws/events?session_id=<id>`. Subscribes a queue on connect, streams events as JSON, unsubscribes on disconnect. Sends `{"type":"ping"}` every 30s to keep the connection alive. Unexpected non-disconnect exceptions are logged (not swallowed).
 
 ## Frontend connection
 
-`useEventStream.ts` — connects immediately after receiving `session_id` from `/api/voice/session`. Uses an `activeRef` flag to prevent reconnect loops when session ends (guards against server-closes-before-React-cleanup race condition). Auto-reconnects with 2s delay if connection drops while session is still active.
+`useEventStream.ts` — connects on component mount using a **stable client ID** from `localStorage` (generated once with `crypto.randomUUID()`, persisted across page loads). The connection is not gated on an active voice session, so manual CRUD events (rename, delete, toggle) are visible in the UI at all times.
 
-`useStore.applyEvent()` — Zustand reducer that handles all event types. Project/task create events are idempotent (dedupe by id). Actions array capped at 50 entries.
+Reconnect uses **exponential backoff** (1 s → 2 s → 4 s … capped at 30 s, with ±0.5 s jitter). On successful `onopen`, backoff resets and `loadInitialState` is called to reconcile any state that drifted during the disconnection window (merges by id — server copy wins for known entities).
+
+`useStore.applyEvent()` — Zustand reducer that handles all event types. Project/task create events are idempotent (dedupe by id). `loadInitialState` merges server state with local state by id (not a full overwrite) to avoid wiping in-flight live events. Actions array capped at 50 entries.
