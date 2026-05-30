@@ -239,7 +239,7 @@ pnpm --filter web typecheck   # TypeScript only
 4. LLM executes ALL required tool calls in sequence before producing any spoken response
 5. Each tool: args validated against a pydantic schema → references resolved → DB write → typed WS event published → React applies as reducer (optimistic update)
 6. **Cartesia TTS** plays confirmation audio after all tools complete
-7. `allow_interruptions=True` — user can speak mid-TTS to correct or continue
+7. `allow_interruptions=True` — user can speak mid-TTS to correct or continue. A barge-in cancels in-flight tools, so the dispatch is `asyncio.shield`-ed (the write still commits) and the system-prompt snapshot is refreshed at the start of every turn, reconciling any tool the framework marked `CANCELLED`.
 
 A background worker ([reminders.py](apps/api/src/vox_pm/reminders.py)) polls every 15s for tasks whose `reminder_at` has come due and fires a `reminder.fired` event over the WS (marked delivered only once a client receives it, so it survives reconnects).
 

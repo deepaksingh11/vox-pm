@@ -211,6 +211,17 @@ P2 "Q2 Review"
 
 ---
 
+### 4.12 Interruption durability — shield the write, reconcile per turn
+**What**: Two guards against barge-in corrupting state (Pipecat 1.2.1 cancels in-flight tool tasks on an `InterruptionFrame`):
+1. **Shield** — the tool handler runs `dispatch_tool` as a task awaited via `asyncio.shield`, so a handler cancellation can't abandon the DB write mid-commit; the write + its entity WS event run to completion. (A real timeout, by contrast, explicitly `task.cancel()`s the hung dispatch.)
+2. **Per-turn reconcile** — `refresh_system_prompt` is now called at the **start of every user turn** (on the final transcript in `_TranscriptPublisher`), not just after a successful tool. The LLM always sees ground-truth DB state, so a tool Pipecat marked `CANCELLED` whose shielded write committed shows up next turn. A prompt rule tells the model a `CANCELLED` result is indeterminate — trust the snapshot.
+
+**Why**: observed live — `create_project` cancelled by a barge-in left the project unpersisted; later commands hit FK violations and phantom clarification candidates. Shielding makes the write durable; per-turn reconcile makes the LLM's view consistent with the DB. We deliberately don't fight Pipecat to feed the *real* result back (it marks CANCELLED); reconciling via the snapshot is simpler and robust. Full transactional undo across a turn remains out of scope.
+
+> Files: `apps/api/src/vox_pm/agent/pipeline.py` (`refresh_system_prompt`, `_make_tool_handler`, `_TranscriptPublisher`), `agent/prompts.py`
+
+---
+
 ## 5. Voice-Specific Tradeoffs (camb.ai focus)
 
 ### 5.1 Latency budget
@@ -238,10 +249,10 @@ Silero VAD (`SileroVADAnalyzer`) detects speech boundaries in Pipecat's frame gr
 
 300 ms is the Deepgram-recommended default for assistant applications and held up well in testing.
 
-### 5.4 Interruptions are first-class
-`PipelineParams(allow_interruptions=True)` — speaking while the bot is mid-TTS immediately cuts audio and starts a fresh LLM turn. Combined with idempotent `create_project`, a user can interrupt mid-confirmation and re-state their intent without creating duplicate state.
+### 5.4 Interruptions are first-class — and durable
+`PipelineParams(allow_interruptions=True)` — speaking while the bot is mid-TTS immediately cuts audio and starts a fresh LLM turn.
 
-The incomplete tool sequence from an interrupted turn is simply dropped (Pipecat discards buffered TTS frames). The LLM context accumulates only completed turns.
+Pipecat cancels in-flight tool calls on a barge-in (`cancel_on_interruption=True`), which originally **lost the write**: a `create_project` cancelled mid-commit left the project unpersisted, and every later command referencing it failed. Two guards fix that (see §4.12): the dispatch is **shielded** so the DB write + its entity event always complete, and the workspace snapshot is **refreshed at the start of every user turn**, so a tool the framework marks `CANCELLED` whose write actually committed is reconciled into the LLM's view next turn. Combined with idempotent create, a user can barge in mid-confirmation without losing or duplicating state.
 
 ### 5.5 Double-belt number normalization
 Deepgram's `numerals=True` converts spoken digits ("Q two") to numerals ("Q 2") at the STT layer. The system prompt also has an explicit rule: "convert number words to digits in titles." Two independent layers because STT accuracy isn't 100% and the prompt rule catches any that slip through.
@@ -295,6 +306,8 @@ The riskiest surface in an LLM app is the model's output reaching the DB, so the
   - `test_idempotency.py` — retried `create_task` dedupes to one row; dedupe scoped by project and by session.
   - `test_reminders.py` — `_run_once()` fires a due reminder exactly once, leaves future/unset ones alone.
   - `test_events.py` — E2E-lite: dispatch → DB → correct `task.created` / `task.moved` bus event with the right payload.
+  - `test_interruption.py` — a shielded dispatch survives the awaiter being cancelled (write persists); idempotent retry after a barge-in = one row.
+  - `test_pipeline_refresh.py` — `refresh_system_prompt` rebuilds the system message from the DB so a committed-but-CANCELLED entity becomes visible.
 - **Frontend (vitest + jsdom)** — `useEventStream.test.ts`: exponential-backoff reconnect, `onReconnect` only on a *re*-open, message routing, malformed-frame tolerance.
 
 `pnpm test` (backend) + `pnpm --filter web test` (frontend) + `pnpm check` (ruff/mypy/tsc/eslint) all green.

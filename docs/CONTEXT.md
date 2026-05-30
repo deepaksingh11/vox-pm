@@ -26,7 +26,9 @@
 - `create_project` is idempotent by title — returns existing project if title matches (handles LLM retry after interrupted tool call). On TOCTOU race (two concurrent creates with same title), catches `IntegrityError` on commit, rolls back, re-fetches the winner rather than returning a 500.
 - `create_task` is idempotent within a short window — same title+project within 8 s (per session) returns the existing task (`deduped: true`) instead of inserting a duplicate. Targets the interruption/retry case; tasks legitimately repeat titles, so this is a time-boxed dedupe, not a unique constraint. Cache lives in `SessionState`.
 - LLM tool arguments are validated against per-tool pydantic models (`agent/tool_args.py`, `extra="forbid"`) at the top of `dispatch_tool`, before reference resolution or any DB write. Wrong types, invalid `status` enums, and unknown fields return `{"ok": False, "error": ...}` — the LLM gets a readable error and no malformed row reaches the DB. Dates remain strings here (parsed/normalized by `_parse_dt`).
-- LLM receives today's date (UTC) in system prompt for correct relative date resolution ("Friday", "tomorrow morning").
+- LLM receives the current date AND time (UTC) in the system prompt for correct relative resolution — both calendar ("Friday", "tomorrow morning") and clock-relative ("in 1 minute", "in 2 hours").
+- Barge-in durability: Pipecat cancels in-flight tool calls on interruption. The dispatch is `asyncio.shield`-ed so the DB write + its entity event always complete (no lost/half write), and the workspace snapshot is refreshed at the START of every user turn (on the final transcript) — so a tool the framework marks `CANCELLED` whose write actually committed reconciles into the LLM's view next turn. A prompt rule treats `CANCELLED` as indeterminate (trust the snapshot, don't blindly re-run). Full transactional undo across a turn is out of scope.
+- A reference passed as `id`/`project_id`/`task_id` must be a known alias (P1/T3) or a real UUID; a free-text title resolves to None ("unknown reference") rather than reaching the DB — prevents FK violations from the LLM passing a title as an id.
 - Titles stored and displayed in sentence case (first word capitalized only). Enforced via system prompt rule.
 
 ## Key Boundaries
@@ -40,8 +42,8 @@
 
 ## System Prompt Design
 
-Injected per session start and refreshed after each tool call:
-- Today's date (UTC) for relative date resolution
+Injected per session start, refreshed after each tool call AND at the start of every user turn:
+- Current date + time (UTC) for relative date/time resolution
 - Full workspace snapshot (`P1 "title" / T1 "title" !` format) for entity reference
 - Last-touched entity marker (`^P` / `^T`) for "it"/"that" resolution
 - Rules: sentence-case titles, tool sequencing (all tools before speech), urgency flags, clarification threshold

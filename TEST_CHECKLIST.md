@@ -78,6 +78,7 @@ Expected end state:
 
 - [x] Agent mid-TTS reply → start speaking → TTS cuts off, new utterance processed
 - [x] After interruption-cancel: no duplicate project/task created (idempotent create)
+- [ ] Barge-in mid-create: say "create a project Personal stuff" and immediately keep talking ("and add a task…") → the project **still persists** (sidebar + DB), follow-up resolves against it, no FK violation, no phantom clarification candidate (shield + per-turn reconcile)
 
 ## R8 — Manual fallback
 

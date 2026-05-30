@@ -55,6 +55,28 @@ def _trim_context(context: LLMContext) -> None:
     del msgs[1 : len(msgs) - _MAX_CONTEXT_MESSAGES]
 
 
+async def refresh_system_prompt(
+    session_id: str, context: LLMContext, ctx_lock: asyncio.Lock
+) -> None:
+    """Rebuild the system message (workspace snapshot) from the DB, in place.
+
+    Called both after every tool and at the start of every user turn. The turn-start
+    call is what keeps the LLM consistent with the DB after a barge-in: a tool the
+    framework marked "CANCELLED" whose shielded write actually committed shows up here.
+    Serialized via ctx_lock since concurrent tool calls share context.messages.
+    """
+    async with ctx_lock:
+        try:
+            snapshot = await _get_context_snapshot(session_id)
+            messages = context.messages
+            if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+                messages[0]["content"] = build_system_prompt(snapshot)
+        except Exception as exc:
+            logger.warning(f"snapshot refresh failed: {exc}")
+        # Trim context to prevent unbounded growth over long sessions.
+        _trim_context(context)
+
+
 def _make_tool_handler(session_id: str, context: LLMContext, ctx_lock: asyncio.Lock):
     async def handle(params: FunctionCallParams) -> None:
         name = params.function_name
@@ -64,21 +86,34 @@ def _make_tool_handler(session_id: str, context: LLMContext, ctx_lock: asyncio.L
         logger.info(f"tool.started name={name} args={args}")
         await publish(session_id, "tool.started", {"name": name, "arguments": args})
 
+        # Run dispatch as its own task and await it shielded: if a barge-in interruption
+        # cancels this handler, the shield lets the DB write + its entity WS events run to
+        # completion (no half-written / lost state) instead of being abandoned mid-commit.
+        task = asyncio.ensure_future(dispatch_tool(name, args, session_id))
         try:
             # 30 s hard timeout guards against a hung DB call or LLM non-response.
-            result = await asyncio.wait_for(
-                dispatch_tool(name, args, session_id),
-                timeout=30.0,
-            )
+            result = await asyncio.wait_for(asyncio.shield(task), timeout=30.0)
             duration_ms = round((time.monotonic() - t0) * 1000)
             logger.info(f"tool.completed name={name} duration_ms={duration_ms} result={result}")
             await publish(session_id, "tool.completed", {"name": name, "result": result, "duration_ms": duration_ms})
         except TimeoutError:
+            # A genuine hang (not an interruption) — abort the dispatch task explicitly,
+            # since shield kept wait_for's timeout from cancelling it.
+            task.cancel()
             duration_ms = 30_000
             error = f"{name} timed out after 30s"
             logger.error(f"tool.timeout name={name}")
             await publish(session_id, "tool.failed", {"name": name, "error": error, "duration_ms": duration_ms})
             result = {"ok": False, "error": error}
+        except asyncio.CancelledError:
+            # Barge-in: Pipecat cancelled this handler. `task` is shielded, so the write +
+            # its entity event still complete (frontend sees the create). Pipecat marks the
+            # LLM tool result "CANCELLED"; refresh_system_prompt on the next user turn (Fix 2)
+            # reconciles the LLM's view with the committed DB state. Re-raise promptly so
+            # Pipecat's cancellation unwinds cleanly.
+            task.add_done_callback(_log_task_exc)
+            logger.warning(f"tool.cancelled name={name} (interrupted; shielded write completing)")
+            raise
         except Exception as exc:
             duration_ms = round((time.monotonic() - t0) * 1000)
             error = str(exc)
@@ -86,20 +121,7 @@ def _make_tool_handler(session_id: str, context: LLMContext, ctx_lock: asyncio.L
             await publish(session_id, "tool.failed", {"name": name, "error": error, "duration_ms": duration_ms})
             result = {"ok": False, "error": error}
 
-        # Serialize context mutation: concurrent tool calls share context.messages,
-        # so snapshot refresh + system-prompt replace + trim must not interleave.
-        async with ctx_lock:
-            try:
-                snapshot = await _get_context_snapshot(session_id)
-                messages = (params.context or context).messages
-                if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-                    messages[0]["content"] = build_system_prompt(snapshot)
-            except Exception as exc:
-                logger.warning(f"snapshot refresh failed: {exc}")
-
-            # Trim context to prevent unbounded growth over long sessions.
-            _trim_context(params.context or context)
-
+        await refresh_system_prompt(session_id, params.context or context, ctx_lock)
         await params.result_callback(result)
 
     return handle
@@ -150,7 +172,7 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
         [
             transport.input(),
             stt,
-            _TranscriptPublisher(session_id),
+            _TranscriptPublisher(session_id, context, ctx_lock),
             context_pair.user(),
             llm,
             tts,
@@ -178,11 +200,16 @@ def _log_task_exc(t: asyncio.Task) -> None:
 
 
 class _TranscriptPublisher(FrameProcessor):
-    """Passes all frames through; side-publishes STT transcripts to event bus."""
+    """Passes all frames through; side-publishes STT transcripts to the event bus and
+    refreshes the system-prompt snapshot at the start of each user turn (on the final
+    transcript) so the LLM always sees ground-truth DB state — reconciling any tool the
+    framework marked CANCELLED on a barge-in whose shielded write actually committed."""
 
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, context: LLMContext, ctx_lock: asyncio.Lock):
         super().__init__()
         self._session_id = session_id
+        self._context = context
+        self._ctx_lock = ctx_lock
         # Keep strong refs to in-flight tasks so they aren't GC'd mid-flight.
         self._tasks: set[asyncio.Task] = set()
 
@@ -198,4 +225,7 @@ class _TranscriptPublisher(FrameProcessor):
             self._fire(publish(self._session_id, "transcript.partial", {"text": frame.text}))
         elif isinstance(frame, TranscriptionFrame):
             self._fire(publish(self._session_id, "transcript.final", {"text": frame.text}))
+            # Refresh BEFORE pushing downstream so the context aggregator + LLM read the
+            # fresh system message this turn. Awaited (not fire-and-forget) for that ordering.
+            await refresh_system_prompt(self._session_id, self._context, self._ctx_lock)
         await self.push_frame(frame, direction)

@@ -25,7 +25,7 @@ DailyTransport (input audio)
 LLM emits tool call
   → _make_tool_handler() in pipeline.py (single FunctionCallParams arg, Pipecat 1.2+ API)
   → publish tool.started event
-  → asyncio.wait_for(dispatch_tool(name, args, session_id), timeout=30s)
+  → asyncio.wait_for(asyncio.shield(dispatch_tool(...)), timeout=30s)   ← shield: a barge-in can't abandon the write mid-commit
       → validate args against per-tool pydantic model (tool_args.py, extra="forbid")
           → bad type / invalid status enum / unknown field → return {"ok":False, "error":"invalid arguments ..."}
       → resolve short aliases (P1/T1) → full UUIDs via SessionState
@@ -34,7 +34,8 @@ LLM emits tool call
       → call service (projects.py / tasks.py)
       → service mutates DB + publishes domain event to bus
   → publish tool.completed / tool.failed / tool.timeout event
-  → refresh system prompt snapshot (runs even on failure; exceptions logged not swallowed)
+  → refresh_system_prompt(): rebuild snapshot from DB (also runs at the START of each user
+      turn, in _TranscriptPublisher, so an interrupted-but-committed write reconciles next turn)
   → trim context to MAX_CONTEXT_MESSAGES=40 (keeps system message + last 40 messages)
   → result_callback(result) → LLM continues turn
   → repeat for all tool calls in sequence
@@ -64,7 +65,7 @@ P2 "Q2 review"
 
 ## System prompt
 
-`prompts.py` — injected at session start, refreshed after each tool call.
+`prompts.py` — injected at session start, refreshed after each tool call AND at the start of each user turn (so the LLM always sees current DB state). Includes current UTC date+time for relative-time resolution ("in 1 minute").
 
 Key rules enforced via prompt:
 - Execute ALL tool calls before any spoken response
@@ -89,4 +90,7 @@ Every tool call is validated against a per-tool pydantic model in `tool_args.py`
 
 ## Interruption handling
 
-`PipelineTask(allow_interruptions=True)` — if user speaks while TTS is playing, audio is cut and the new transcript is processed immediately. The incomplete tool sequence from the interrupted turn is lost; the new utterance starts a fresh LLM turn.
+`PipelineTask(allow_interruptions=True)` — if the user speaks while TTS is playing, audio is cut and the new transcript is processed immediately. Pipecat cancels in-flight tool tasks on the interruption, which would otherwise abandon a write mid-commit. Two guards (in `pipeline.py`) make a barge-in safe:
+
+1. **Shielded dispatch** — `handle` runs `dispatch_tool` as a task awaited via `asyncio.shield`. A handler cancellation (barge-in) no longer aborts the DB write or its entity WS event — they run to completion. `except asyncio.CancelledError` logs and re-raises so Pipecat unwinds cleanly. A genuine 30 s timeout still `task.cancel()`s the hung dispatch explicitly (shield only protects against external cancellation, not hangs).
+2. **Per-turn reconcile** — `refresh_system_prompt()` runs at the start of every user turn (on the final `TranscriptionFrame` in `_TranscriptPublisher`), not only after a successful tool. So a tool Pipecat marked `CANCELLED` whose shielded write actually committed is reconciled into the LLM's view on the next turn. A prompt rule tells the model `CANCELLED` is indeterminate — trust the snapshot.
