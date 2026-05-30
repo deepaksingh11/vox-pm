@@ -1,50 +1,12 @@
 """Tool dispatch integration tests.
 
-Runs against SQLite in-memory by default. Set TEST_DATABASE_URL to a
-postgresql+asyncpg:// URL for H8 Postgres coverage.
+Shared fixtures (db_session, patched session factory) live in conftest.py.
 """
 
-import os
-
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel, select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import select
 
-import vox_pm.models  # noqa: F401 — registers SQLModel metadata
 from vox_pm.models import Project, Task
-
-_TEST_DB_URL = os.environ.get("TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-
-
-@pytest.fixture(scope="function")
-async def db_session():
-    engine = create_async_engine(_TEST_DB_URL)
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with factory() as session:
-        yield session
-    # Drop tables so each test starts fresh (matters for shared Postgres DB in CI).
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
-    await engine.dispose()
-
-
-@pytest.fixture(autouse=True)
-def patch_session_factory(db_session, monkeypatch):
-    import contextlib
-
-    @contextlib.asynccontextmanager
-    async def _cm():
-        yield db_session
-
-    class _Factory:
-        def __call__(self):
-            return _cm()
-
-    import vox_pm.agent.tools as tools_mod
-    monkeypatch.setattr(tools_mod, "get_session_factory", lambda: _Factory())
 
 
 async def dispatch(name: str, args: dict, session_id: str = "test"):

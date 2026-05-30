@@ -114,6 +114,11 @@ async def update_task(
         setattr(task, field_name, value)
         changed.append(field_name)
 
+    # Re-arm the reminder whenever reminder_at is (re)set to a future-or-any non-null
+    # value, so the worker fires the new time even if the old one already fired.
+    if "reminder_at" in kwargs and kwargs["reminder_at"] is not None:
+        task.reminder_fired = False
+
     task.updated_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(task)
     await session.commit()

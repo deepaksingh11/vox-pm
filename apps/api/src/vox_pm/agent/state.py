@@ -1,12 +1,21 @@
 """Per-session mutable context for reference resolution."""
 
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Literal
 
 EntityKind = Literal["project", "task"]
 
 _ALIAS_RE = re.compile(r"^[PT]\d+$")
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+# Window within which an identical create_task (same title+project) is treated as a
+# retry and deduped. Short enough not to block a user genuinely making two same-named
+# tasks minutes apart; long enough to absorb an interruption/network-blip retry.
+_CREATE_DEDUPE_TTL_SECONDS = 8.0
 
 
 @dataclass
@@ -31,6 +40,9 @@ class SessionState:
     _t_counter: int = 0
     _max_recent: int = 20
 
+    # (title, project_id) -> (task_id, monotonic_ts) for short-window create dedupe.
+    _recent_creates: dict[tuple[str, str | None], tuple[str, float]] = field(default_factory=dict)
+
     def touch(self, ref: EntityRef) -> None:
         self.recent = [r for r in self.recent if r.id != ref.id]
         self.recent.append(ref)
@@ -42,16 +54,34 @@ class SessionState:
             self.current_project_id = ref.project_id
 
     def resolve_id(self, alias_or_id: str) -> str | None:
-        """Resolve alias → UUID, pass through full UUIDs, return None for unknown aliases.
+        """Resolve alias → UUID, pass through real UUIDs, return None for anything else.
 
-        None signals an unknown reference (alias-shaped but not in map) so callers
-        can return an error rather than passing a bogus string to the DB.
+        None signals an unknown reference so callers return an error rather than
+        passing a bogus value to the DB. Critically, a free-text string (e.g. the LLM
+        passing a project *title* as project_id) is NOT a valid reference — letting it
+        through caused a FK violation. Only known aliases (P1/T3) and real UUIDs (e.g.
+        an id echoed back from a prior tool result) resolve.
         """
         if alias_or_id in self._alias_map:
             return self._alias_map[alias_or_id]
-        if _ALIAS_RE.match(alias_or_id):
+        if _UUID_RE.match(alias_or_id):
+            return alias_or_id
+        return None
+
+    def check_recent_create(self, title: str, project_id: str | None) -> str | None:
+        """Return the id of a task created with the same title+project within the
+        dedupe window, else None. Used to make create_task idempotent under retries."""
+        entry = self._recent_creates.get((title, project_id))
+        if entry is None:
             return None
-        return alias_or_id
+        task_id, ts = entry
+        if time.monotonic() - ts > _CREATE_DEDUPE_TTL_SECONDS:
+            del self._recent_creates[(title, project_id)]
+            return None
+        return task_id
+
+    def record_create(self, title: str, project_id: str | None, task_id: str) -> None:
+        self._recent_creates[(title, project_id)] = (task_id, time.monotonic())
 
     def last_of_kind(self, kind: EntityKind) -> EntityRef | None:
         for r in reversed(self.recent):

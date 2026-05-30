@@ -44,3 +44,15 @@ async def publish(session_id: str, event_type: EventType, data: dict) -> None:
 
     for q in dead:
         unsubscribe(session_id, q)
+
+
+async def broadcast(event_type: EventType, data: dict) -> int:
+    # Fan an event out to every connected session. Used by the reminder worker, which
+    # has no single owning session in the current single-user model. list() snapshots
+    # the keys so we don't mutate _subscribers (via publish→unsubscribe) mid-iteration.
+    # Returns the number of sessions delivered to, so the caller can defer marking a
+    # reminder "fired" until at least one client was actually listening.
+    sessions = list(_subscribers.keys())
+    for session_id in sessions:
+        await publish(session_id, event_type, data)
+    return len(sessions)

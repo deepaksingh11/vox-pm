@@ -9,6 +9,7 @@ import { ActionFeed } from "./components/ActionFeed";
 import { Sidebar } from "./components/Sidebar";
 import { TaskPane } from "./components/TaskPane";
 import { ClarificationPrompt } from "./components/ClarificationPrompt";
+import { ReminderToast } from "./components/ReminderToast";
 import { DebugPanel, useDebugEnabled } from "./components/DebugPanel";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -44,11 +45,10 @@ export default function App() {
                 onClick={toggleDebug}
                 aria-label={debugEnabled ? "Hide debug panel" : "Show debug panel"}
                 aria-pressed={debugEnabled}
-                className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors text-xs font-bold ${
-                  debugEnabled
-                    ? "bg-primary/15 text-primary"
-                    : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent"
-                }`}
+                className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors text-xs font-bold ${debugEnabled
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent"
+                  }`}
               >
                 D
               </button>
@@ -81,6 +81,7 @@ export default function App() {
               />
               <LiveTranscript />
               <ClarificationPrompt />
+              <ReminderToast />
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-4">

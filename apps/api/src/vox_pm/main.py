@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from vox_pm.config import get_settings
 from vox_pm.db import create_tables, get_session_factory
 from vox_pm.events.ws import router as ws_router
+from vox_pm.reminders import reminder_loop
 from vox_pm.routers import projects, tasks, voice
 
 _started_at = 0.0
@@ -26,10 +27,19 @@ async def lifespan(app: FastAPI):
     print("\n\033[36m[api]\033[0m  API ready", flush=True)
     print("\033[36m[api]\033[0m  http://localhost:8000", flush=True)
     print("\033[36m[api]\033[0m  http://localhost:8000/docs  (Swagger)\n", flush=True)
+
+    # Background reminder worker: fires due reminders once each.
+    reminder_stop = asyncio.Event()
+    reminder_task = asyncio.create_task(reminder_loop(reminder_stop))
     try:
         yield
     except asyncio.CancelledError:
         pass
+    finally:
+        reminder_stop.set()
+        reminder_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reminder_task
 
 
 def create_app() -> FastAPI:

@@ -20,6 +20,7 @@ In-process pub/sub (asyncio) + WebSocket gateway.
 | `task.updated` | `{task: TaskRead, changed_fields: []}` |
 | `task.deleted` | `{id}` |
 | `task.moved` | `{task: TaskRead, from_project_id, to_project_id}` |
+| `reminder.fired` | `{task: TaskRead}` |
 | `clarification.ask` | `{question, candidates: []}` |
 | `clarification.resolved` | `{}` |
 
@@ -31,6 +32,8 @@ All three event sources use the same `session_id` key (the frontend `clientId`):
 - REST routers read it from the `X-Client-Id` request header.
 - The voice pipeline receives it from the session-creation request body and uses it throughout the pipeline lifetime.
 - WS clients subscribe with `?session_id=<clientId>`.
+
+`broadcast(event_type, data)` — fans an event out to **every** connected session (returns the count delivered to). Used only by the reminder worker (`reminders.py`), which has no single owning session in the single-user model; the count lets the worker mark a reminder `fired` only once a client actually received it.
 
 `ws.py` — FastAPI WebSocket route at `/ws/events?session_id=<id>`. Subscribes a queue on connect, streams events as JSON, unsubscribes on disconnect. Sends `{"type":"ping"}` every 30s to keep the connection alive. Unexpected non-disconnect exceptions are logged (not swallowed).
 

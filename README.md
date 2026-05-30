@@ -80,7 +80,11 @@ DAILY_API_KEY=...
 CORS_ORIGINS=http://localhost:5173
 ```
 
-Tables are created automatically on first startup (no migration step needed).
+Tables are created automatically on first startup. **Existing DB from a previous run:** `create_all` won't add new columns, so add the reminder-delivery column once:
+```sql
+ALTER TABLE tasks ADD COLUMN reminder_fired boolean NOT NULL DEFAULT false;
+```
+(Or just recreate the dev DB.)
 
 ### 3. Run
 
@@ -125,6 +129,7 @@ You can also create projects manually via **+ New project** in the sidebar (voic
 - **Voice-first**: sidebar prompts voice use; manual create/rename/delete as fallback
 - **Live transcript**: partial (italic) → final with `You` label
 - **Agent Actions feed**: every tool call logged with type, summary, timestamp
+- **Reminder toast**: when a task's `reminder_at` comes due, a reminder fires over the WS and surfaces as an amber toast + action-feed entry
 - **Debug panel**: toggle with `D` button in header — shows raw WS events
 - **Manual actions**: checkbox to mark done, hover → delete/rename via dropdown
 
@@ -143,6 +148,8 @@ You can also create projects manually via **+ New project** in the sidebar (voic
 | `move_task` | Move task to different project |
 | `convert_task_to_project` | Delete task, create project with same title |
 | `ask_clarification` | Ask user when reference is genuinely ambiguous |
+
+All tool arguments are validated against per-tool pydantic schemas before dispatch (bad types / unknown fields / invalid status are rejected before any DB write). `create_task` is idempotent within a short window — a retried create (same title+project) after an interruption returns the existing task instead of duplicating.
 
 ---
 
@@ -183,27 +190,31 @@ apps/
 │       ├── agent/
 │       │   ├── pipeline.py       # Pipecat frame graph (VAD→STT→LLM→TTS)
 │       │   ├── prompts.py        # System prompt + snapshot injection
-│       │   ├── tools.py          # Tool schema + dispatch (9 tools)
-│       │   ├── state.py          # SessionState, alias map, reference resolution
+│       │   ├── tools.py          # Tool schema + dispatch (9 tools), arg validation + create dedupe
+│       │   ├── tool_args.py      # Per-tool pydantic validation models
+│       │   ├── state.py          # SessionState, alias map, reference resolution, create-dedupe cache
 │       │   └── llm/factory.py    # Provider fallback (Anthropic→OpenAI→Gemini)
 │       ├── events/
-│       │   ├── bus.py            # asyncio pub/sub (per-session queues)
+│       │   ├── bus.py            # asyncio pub/sub (per-session queues) + broadcast()
 │       │   └── ws.py             # WebSocket gateway /ws/events
 │       ├── services/
 │       │   ├── projects.py       # Project CRUD (idempotent create, reparent-on-delete)
 │       │   └── tasks.py          # Task CRUD, move, position management
+│       ├── reminders.py          # Background poll loop — fires due reminders over WS
 │       ├── models.py             # SQLModel schema + indexes
 │       └── db.py                 # Async engine, pool config, Neon SSL handling
 └── web/                          # React frontend
     └── src/
         ├── hooks/
         │   ├── useStore.ts        # Zustand store + WS event reducer
-        │   └── useEventStream.ts  # WebSocket client with reconnect guard
+        │   ├── useEventStream.ts  # WebSocket client with reconnect guard
+        │   └── useEventStream.test.ts  # vitest: reconnect/backoff coverage
         └── components/
             ├── Sidebar.tsx        # Project list + create/rename/delete
             ├── TaskPane.tsx       # Task list + empty state
             ├── TaskRow.tsx        # Task row with date chips + actions
             ├── ActionFeed.tsx     # Agent action feed (capped 50)
+            ├── ReminderToast.tsx  # Amber toast when a reminder fires
             └── DebugPanel.tsx     # Raw WS event log (toggle with D)
 ```
 
@@ -212,8 +223,9 @@ apps/
 ## Development
 
 ```bash
-pnpm test          # Python unit tests (pytest)
-pnpm check         # ruff + mypy + tsc + eslint
+pnpm test               # Python unit tests (pytest) — tools, arg validation, idempotency, reminders, events
+pnpm --filter web test  # Frontend unit tests (vitest) — WS reconnect/backoff
+pnpm check              # ruff + mypy + tsc + eslint
 pnpm --filter web typecheck   # TypeScript only
 ```
 
@@ -225,9 +237,11 @@ pnpm --filter web typecheck   # TypeScript only
 2. On silence (300ms endpointing), final transcript triggers LLM turn
 3. **LLM** receives system prompt with today's date (UTC) + full workspace snapshot (P1/T1 aliases for reference resolution)
 4. LLM executes ALL required tool calls in sequence before producing any spoken response
-5. Each tool: DB write → typed WS event published → React applies as reducer (optimistic update)
+5. Each tool: args validated against a pydantic schema → references resolved → DB write → typed WS event published → React applies as reducer (optimistic update)
 6. **Cartesia TTS** plays confirmation audio after all tools complete
 7. `allow_interruptions=True` — user can speak mid-TTS to correct or continue
+
+A background worker ([reminders.py](apps/api/src/vox_pm/reminders.py)) polls every 15s for tasks whose `reminder_at` has come due and fires a `reminder.fired` event over the WS (marked delivered only once a client receives it, so it survives reconnects).
 
 **Reference resolution:** "that one" → last touched entity. "the finance one" → fuzzy title match. "first task" → T[0] in snapshot.  
 **Corrections:** "actually make that a project" → `convert_task_to_project` on last touched task.  

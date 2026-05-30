@@ -29,8 +29,9 @@ pnpm dev
 Tables are auto-created on first startup. If you have an existing DB from a previous run, recreate it or run:
 ```sql
 ALTER TABLE tasks ADD CONSTRAINT uq_tasks_project_position UNIQUE (project_id, position);
+ALTER TABLE tasks ADD COLUMN reminder_fired boolean NOT NULL DEFAULT false;
 ```
-(The `UniqueConstraint` added to `models.py` won't apply to existing tables via `create_all`.)
+(Schema changes in `models.py` — the unique constraint and the `reminder_fired` column — won't apply to existing tables via `create_all`.)
 
 - API → http://localhost:8000
 - Swagger docs → http://localhost:8000/docs
@@ -39,7 +40,8 @@ ALTER TABLE tasks ADD CONSTRAINT uq_tasks_project_position UNIQUE (project_id, p
 ## 3. Tests
 
 ```bash
-pnpm test
+pnpm test               # backend (pytest): tools, arg validation, idempotency, reminders, events
+pnpm --filter web test  # frontend (vitest): WS reconnect/backoff
 ```
 
 ## 4. Build check

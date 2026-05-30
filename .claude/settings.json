@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm check *)",
+      "Bash(pnpm --filter web test)",
+      "Bash(pnpm check:py)"
+    ]
+  }
+}

@@ -34,6 +34,7 @@ export type EventType =
   | "task.updated"
   | "task.deleted"
   | "task.moved"
+  | "reminder.fired"
   | "clarification.ask"
   | "clarification.resolved";
 

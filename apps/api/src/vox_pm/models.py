@@ -44,6 +44,9 @@ class Task(SQLModel, table=True):
     urgent: bool = False
     due_at: datetime | None = None
     reminder_at: datetime | None = None
+    # Flipped to True once the reminder worker has fired reminder_at, so each reminder
+    # delivers exactly once. Re-armed (set back to False) whenever reminder_at changes.
+    reminder_fired: bool = False
     status: str = "open"
     position: int = Field(default=0)
     created_at: datetime = Field(default_factory=_now)

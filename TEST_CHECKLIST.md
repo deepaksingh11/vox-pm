@@ -129,6 +129,17 @@ Expected end state:
 ### agentThinking auto-clear (M4)
 - [ ] Ask a question that gets a voice-only reply (no tool call, e.g. "what's on my list?") → task pane unfreezes within 12 seconds without any tool event
 
+### Reminder delivery (#1)
+- [ ] Set a near-future reminder (e.g. add a task then PATCH `reminder_at` to ~30s out via `/docs`, or say "remind me about X in one minute"). Keep the tab open → within the due time + ≤15s an amber **ReminderToast** appears + an `⏰ Reminder` entry lands in the action feed; DevTools WS shows a `reminder.fired` frame.
+- [ ] Fires exactly once — toast doesn't re-appear on the next poll tick.
+- [ ] Close the tab before a reminder is due, reopen after → reminder still fires on reconnect (deliver-then-mark, not lost).
+
+### Task creation idempotency (#3)
+- [ ] Trigger the same `create_task` twice within a few seconds (e.g. interrupt mid-confirmation and restate "add a task called foo") → only one task row; no duplicate.
+
+### Tool-argument validation (#2)
+- [ ] (Backend) `pnpm test` covers it: malformed args (bad type, invalid status, unknown field) are rejected with no DB write. No user-facing UI path.
+
 ## Bug log
 
 <!--

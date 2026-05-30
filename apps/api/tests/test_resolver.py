@@ -148,9 +148,12 @@ def test_resolve_id_returns_none_for_unknown_alias():
     assert state.resolve_id("T7") is None
 
 
-def test_resolve_id_uuid_not_confused_with_alias():
-    """C2: a UUID that starts with P/T letters passes through (not treated as alias)."""
+def test_resolve_id_rejects_free_text_reference():
+    """A free-text string (e.g. the LLM passing a project *title* as project_id) is NOT
+    a valid reference — it must return None, not pass through to the DB (FK violation)."""
     state = make_state()
-    # This isn't alias-shaped (no \d+ suffix matching P\d+), so it passes through
-    not_an_alias = "Psome-long-uuid-string"
-    assert state.resolve_id(not_an_alias) == not_an_alias
+    assert state.resolve_id("Personal stuff") is None
+    assert state.resolve_id("Psome-long-uuid-string") is None
+    # Real UUIDs (e.g. an id echoed back from a prior tool result) still pass through.
+    real_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    assert state.resolve_id(real_uuid) == real_uuid

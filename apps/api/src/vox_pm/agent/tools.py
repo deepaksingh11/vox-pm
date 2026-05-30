@@ -8,6 +8,7 @@ from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from sqlalchemy.exc import IntegrityError
 
 from vox_pm.agent.state import EntityRef, SessionState, get_state
+from vox_pm.agent.tool_args import validate_args
 from vox_pm.db import get_session_factory
 from vox_pm.events.bus import publish
 from vox_pm.services import projects as project_svc
@@ -170,6 +171,12 @@ async def dispatch_tool(
 ) -> dict[str, Any]:
     state = get_state(session_id)
 
+    # Validate raw LLM args against the tool's schema before resolution or DB work.
+    validated, err = validate_args(name, args)
+    if err is not None:
+        return {"ok": False, "error": err}
+    args = validated  # type: ignore[assignment]
+
     for key in ("id", "task_id", "project_id"):
         resolved = _resolve_ref(state, key, args)
         if resolved is False:
@@ -202,16 +209,23 @@ async def dispatch_tool(
                 return {"ok": ok}
 
             case "create_task":
+                effective_project_id = args.get("project_id") or state.current_project_id
+                # Idempotency: a retried create (same title+project within a short window,
+                # e.g. after an interruption) returns the existing task instead of duplicating.
+                existing_id = state.check_recent_create(args["title"], effective_project_id)
+                if existing_id is not None:
+                    return {"ok": True, "id": existing_id, "title": args["title"], "deduped": True}
                 created_task = await task_svc.create_task(
                     db,
                     title=args["title"],
-                    project_id=args.get("project_id") or state.current_project_id,
+                    project_id=effective_project_id,
                     description=args.get("description"),
                     urgent=args.get("urgent", False),
                     due_at=_parse_dt(args.get("due_at")),
                     reminder_at=_parse_dt(args.get("reminder_at")),
                     session_id=session_id,
                 )
+                state.record_create(args["title"], effective_project_id, created_task.id)
                 state.touch(EntityRef(
                     id=created_task.id,
                     title=created_task.title,

@@ -4,7 +4,7 @@
 
 **Problem**: Build a voice-first PM tool where the user speaks in long, messy utterances — corrections, interleaved intent, ambiguous references — and the UI reflects their intent in real time.
 
-**What it does**: Vox PM listens via WebRTC microphone, transcribes speech with Deepgram, feeds the transcript to Claude Sonnet 4.6, which emits tool calls (create/update/delete projects & tasks, move, set urgency, due dates, reminders), executes them against Postgres, and pushes domain events over a WebSocket to a React UI that updates live as the agent works. The entire Q2-report example from the spec — corrections, mid-sentence moves, clarifications — runs end-to-end in a single utterance.
+**What it does**: Vox PM listens via WebRTC microphone, transcribes speech with Deepgram, feeds the transcript to Claude Sonnet 4.6, which emits tool calls (create/update/delete projects & tasks, move, set urgency, due dates, reminders), validates them against per-tool schemas, executes them against Postgres, and pushes domain events over a WebSocket to a React UI that updates live as the agent works. The entire Q2-report example from the spec — corrections, mid-sentence moves, clarifications — runs end-to-end in a single utterance. Due reminders fire over the WS via a background worker.
 
 **Stack (one line)**:
 Daily WebRTC → Pipecat → Deepgram STT → Claude Sonnet 4.6 → FastAPI + SQLModel + Neon Postgres → asyncio pub/sub → FastAPI WebSocket → React + Zustand
@@ -136,6 +136,24 @@ P2 "Q2 Review"
 
 ---
 
+### 4.5b `create_task` idempotency — short-window dedupe
+**What**: `SessionState` keeps a `(title, project_id) → (task_id, ts)` cache. A `create_task` with the same title+project within an 8 s window returns the existing task (`deduped: true`) instead of inserting a second row.
+
+**Why**: Projects are idempotent by title, but tasks legitimately repeat titles, so a unique constraint is wrong. The realistic duplicate source is a *retry* — an interruption/barge-in abandons a tool sequence and the LLM re-issues `create_task` on the next turn. The short window absorbs that retry without blocking a user who genuinely wants two same-named tasks minutes apart. Scoped per session, so two clients don't collide.
+
+> Files: `apps/api/src/vox_pm/agent/state.py` (`check_recent_create`/`record_create`), `agent/tools.py` (`create_task` case)
+
+---
+
+### 4.5c Tool-argument validation before dispatch
+**What**: Every LLM tool call is validated against a per-tool pydantic model (`agent/tool_args.py`, `extra="forbid"`) at the top of `dispatch_tool`, before reference resolution or any DB work. Wrong types, bad `status` enums, and hallucinated fields return `{"ok": False, "error": ...}` — which doubles as readable feedback to the LLM.
+
+**Why**: Tool args arrived as `dict[str, Any]` and flowed straight to the service layer. A hallucinated `{"title": 123}` or `status: "frozen"` could reach Postgres. Validating at the boundary keeps malformed model output out of the DB and gives the model a precise error to correct against. Dates stay as strings (the existing `_parse_dt` owns timezone normalization); the models enforce the type/enum contract.
+
+> File: `apps/api/src/vox_pm/agent/tool_args.py`
+
+---
+
 ### 4.6 `delete_project` reparents tasks, not cascade-delete
 **What**: Before deleting a project row, the service runs `UPDATE tasks SET project_id = NULL WHERE project_id = X`. Tasks survive as unassigned orphans.
 
@@ -181,6 +199,15 @@ P2 "Q2 Review"
 **Why**: A voice agent emitting unexpected data (malformed dates, unknown event types) is not a recoverable error by default in React. These layers make the UI resilient to partial failures without hiding them.
 
 > Files: `apps/web/src/components/ErrorBoundary.tsx`, `apps/web/src/hooks/useStore.ts`, `apps/web/src/components/TaskRow.tsx`
+
+---
+
+### 4.11 Reminder delivery worker — deliver-then-mark
+**What**: A background asyncio loop (`reminders.py`, started in the FastAPI lifespan) polls every 15 s for tasks where `reminder_at <= now AND reminder_fired = false`, broadcasts a `reminder.fired` event, and flips `reminder_fired` **only after at least one client received it**. The frontend renders an amber `ReminderToast` + action-feed entry. `reminder_at` re-arms the flag whenever it changes.
+
+**Why**: `reminder_at` was previously stored but never fired — the bell chip implied a capability that didn't exist. A 15 s poll loop is the no-dependency, single-node equivalent of APScheduler; deliver-then-mark means a reminder that comes due while no client is connected waits and fires on reconnect, rather than being silently lost. Broadcast (not per-session routing) is correct for the current single-user model; per-user scoping (owning `client_id` on the task) is noted below as future work.
+
+> Files: `apps/api/src/vox_pm/reminders.py`, `events/bus.py` (`broadcast`), `apps/web/src/components/ReminderToast.tsx`
 
 ---
 
@@ -236,9 +263,9 @@ These are out of scope for v1 but the architecture has clear seams for each:
 | **Horizontal scale** | In-process `asyncio.Queue` pub/sub | Replace with Redis Streams or NATS JetStream; one channel per session_id |
 | **Session state durability** | In-memory `_states` dict, wiped on restart | Redis with 24 h TTL; `SessionState` serialized as JSON |
 | **Authentication** | None — single global namespace | Users table + JWT / OIDC; per-user project/task scoping; signed WS session IDs |
-| **Tool idempotency** | Only `create_project` is idempotent (by title) | Add `idempotency_key` arg to all write tools; service-layer dedup on it |
+| **Tool idempotency** | `create_project` idempotent by title; `create_task` deduped by title+project within an 8 s window | Add explicit `idempotency_key` arg to all write tools; service-layer dedup on it, durable across restarts |
 | **Provider failover** | Build-time: first provider with a key wins | Runtime retry with backoff on same provider, then fallback; same for Deepgram/Cartesia |
-| **Reminder delivery** | Stored but never fires (`services/reminders.py`) | APScheduler or dedicated worker reading `reminder_at < now`; push via WS / FCM / email |
+| **Reminder delivery** | 15 s asyncio poll loop broadcasts `reminder.fired`, deliver-then-mark (`reminders.py`) | Per-user routing; APScheduler/dedicated worker; multi-channel push (FCM / email); horizontal-safe locking |
 | **Observability** | `loguru` + `print()` | OpenTelemetry spans per turn: STT duration, LLM duration, per-tool duration, TTS first-byte |
 | **Spend caps** | None | Per-session token budget; kill-switch on anomalous Deepgram/Cartesia/Anthropic spend |
 | **Multi-user** | Global project namespace | Per-user data isolation; CRDT or operational-transform for collaborative editing |
@@ -250,12 +277,27 @@ These are out of scope for v1 but the architecture has clear seams for each:
 
 ## 7. What's Intentionally Not in v1
 
-- **Reminder delivery** — `reminder_at` is stored; no scheduler or push mechanism.
-- **Authentication** — single-user; no user table; no per-user data isolation.
+- **Authentication** — single-user; no user table; no per-user data isolation. Reminders broadcast to all connected clients (no per-user reminder routing).
 - **Transcript persistence** — conversation history is ephemeral.
 - **Undo stack** — "actually" corrections rely on prompt-driven LLM semantics, not a compensating-transaction log.
 - **`clarification.resolved` server event** — UI dismisses the clarification prompt locally; no server-side wiring back into the LLM context. The LLM continues from the user's spoken reply naturally.
 - **Concurrent multi-user sessions** — `projects.title` is globally unique; two users sharing a DB would collide.
+
+---
+
+## 7b. Testing
+
+The riskiest surface in an LLM app is the model's output reaching the DB, so the tests target that boundary rather than the happy path alone.
+
+- **Backend (pytest, SQLite in-memory / Postgres via `TEST_DATABASE_URL`)** — shared fixtures in `tests/conftest.py` (patched session factory + per-test `SessionState` reset):
+  - `test_tools.py` — tool dispatch CRUD, move, convert, idempotent create.
+  - `test_tool_args.py` — malformed args (bad type, bad status enum, unknown field) rejected with **no row written**; valid args pass.
+  - `test_idempotency.py` — retried `create_task` dedupes to one row; dedupe scoped by project and by session.
+  - `test_reminders.py` — `_run_once()` fires a due reminder exactly once, leaves future/unset ones alone.
+  - `test_events.py` — E2E-lite: dispatch → DB → correct `task.created` / `task.moved` bus event with the right payload.
+- **Frontend (vitest + jsdom)** — `useEventStream.test.ts`: exponential-backoff reconnect, `onReconnect` only on a *re*-open, message routing, malformed-frame tolerance.
+
+`pnpm test` (backend) + `pnpm --filter web test` (frontend) + `pnpm check` (ruff/mypy/tsc/eslint) all green.
 
 ---
 
@@ -282,23 +324,28 @@ apps/
 │   ├── agent/
 │   │   ├── pipeline.py        # Frame graph, tool handler, snapshot refresh
 │   │   ├── prompts.py         # System prompt rules (terse, <20 lines)
-│   │   ├── tools.py           # Tool schema (TOOLS_SCHEMA) + dispatch
-│   │   ├── state.py           # SessionState, alias map, snapshot_text()
+│   │   ├── tools.py           # Tool schema (TOOLS_SCHEMA) + dispatch, arg validation + create dedupe
+│   │   ├── tool_args.py       # Per-tool pydantic validation models
+│   │   ├── state.py           # SessionState, alias map, snapshot_text(), create-dedupe cache
 │   │   └── llm/factory.py     # Provider fallback chain
 │   ├── events/
-│   │   ├── bus.py             # asyncio.Queue pub/sub
+│   │   ├── bus.py             # asyncio.Queue pub/sub + broadcast()
 │   │   └── ws.py              # /ws/events WebSocket gateway
 │   ├── services/
 │   │   ├── projects.py        # Idempotent create, reparent-on-delete
-│   │   └── tasks.py           # CRUD, move, position management
-│   ├── models.py              # Schema + composite index + unique constraint
+│   │   └── tasks.py           # CRUD, move, position management, reminder re-arm
+│   ├── reminders.py           # Background poll loop → fires reminder.fired over WS
+│   ├── models.py              # Schema + composite index + unique constraint + reminder_fired
 │   └── db.py                  # Pool tuning, Neon SSL handling, warm-up
+│   tests/                     # pytest: tools, tool_args, idempotency, reminders, events
 └── web/src/
     ├── hooks/
-    │   ├── useStore.ts         # Zustand reducer, event caps (50/100)
-    │   └── useEventStream.ts   # WS with activeRef reconnect guard
+    │   ├── useStore.ts         # Zustand reducer, event caps (50/100), reminder.fired handler
+    │   ├── useEventStream.ts   # WS with activeRef reconnect guard
+    │   └── useEventStream.test.ts  # vitest: reconnect/backoff
     └── components/
         ├── ErrorBoundary.tsx   # Render-crash fallback
+        ├── ReminderToast.tsx   # Amber toast on reminder.fired
         ├── TaskRow.tsx         # safeFormat date guard
         └── TaskPane.tsx        # Empty state with voice-facts panel
 ```

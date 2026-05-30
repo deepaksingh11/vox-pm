@@ -11,11 +11,13 @@ interface Store {
   finalTranscript: string;
   agentThinking: boolean;
   clarification: { question: string; candidates: string[] } | null;
+  reminderNotice: { task: Task } | null;
   selectedProjectId: string | null;
 
   loadInitialState: () => Promise<void>;
   applyEvent: (event: WSEvent) => void;
   clearClarification: () => void;
+  clearReminderNotice: () => void;
   clearAgentState: () => void;
   setSelectedProject: (id: string | null) => void;
   toggleTaskDone: (taskId: string) => void;
@@ -59,6 +61,8 @@ function summarize(event: WSEvent): string {
       return `Deleted task`;
     case "task.moved":
       return `Moved task "${(d.task as Task)?.title}"`;
+    case "reminder.fired":
+      return `⏰ Reminder: ${(d.task as Task)?.title}`;
     case "clarification.ask":
       return `Asked: ${d.question as string}`;
     default:
@@ -75,6 +79,7 @@ export const useStore = create<Store>((set, get) => ({
   finalTranscript: "",
   agentThinking: false,
   clarification: null,
+  reminderNotice: null,
   selectedProjectId: null,
 
   loadInitialState: async () => {
@@ -301,6 +306,17 @@ export const useStore = create<Store>((set, get) => ({
         break;
       }
 
+      case "reminder.fired": {
+        const t = event.data.task as Task;
+        set((s) => ({
+          // Reflect the persisted reminder_fired flag if we hold the task.
+          tasks: s.tasks.map((x) => (x.id === t.id ? t : x)),
+          reminderNotice: { task: t },
+          actions: addAction(s.actions, event),
+        }));
+        break;
+      }
+
       case "clarification.ask":
         _clearThinkingTimer();
         set({
@@ -319,6 +335,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   clearClarification: () => set({ clarification: null }),
+  clearReminderNotice: () => set({ reminderNotice: null }),
   clearAgentState: () => {
     _clearThinkingTimer();
     set({ agentThinking: false, clarification: null, partialTranscript: "", finalTranscript: "" });

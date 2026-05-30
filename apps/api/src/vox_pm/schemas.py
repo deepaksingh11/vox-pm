@@ -24,6 +24,7 @@ class TaskRead(BaseModel):
     urgent: bool
     due_at: datetime | None
     reminder_at: datetime | None
+    reminder_fired: bool
     status: TaskStatus
     position: int
     created_at: datetime
@@ -76,6 +77,7 @@ EventType = Literal[
     "task.updated",
     "task.deleted",
     "task.moved",
+    "reminder.fired",
     "clarification.ask",
     "clarification.resolved",
 ]

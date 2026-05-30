@@ -26,6 +26,8 @@ LLM emits tool call
   → _make_tool_handler() in pipeline.py (single FunctionCallParams arg, Pipecat 1.2+ API)
   → publish tool.started event
   → asyncio.wait_for(dispatch_tool(name, args, session_id), timeout=30s)
+      → validate args against per-tool pydantic model (tool_args.py, extra="forbid")
+          → bad type / invalid status enum / unknown field → return {"ok":False, "error":"invalid arguments ..."}
       → resolve short aliases (P1/T1) → full UUIDs via SessionState
           → unknown alias (P\d+/T\d+ not in map) → return {"ok":False, "error":"unknown reference"}
           → full UUID → pass through unchanged
@@ -75,9 +77,15 @@ Key rules enforced via prompt:
 
 `llm/factory.py` — walks `LLM_PROVIDERS` env var (default: `anthropic,gemini,openai`). First entry with a valid API key wins. All providers register identical function handlers against the same `TOOL_DEFINITIONS` / `TOOLS_SCHEMA`.
 
+## Argument validation
+
+Every tool call is validated against a per-tool pydantic model in `tool_args.py` (`ARG_MODELS`, `extra="forbid"`) before reference resolution or any DB work. This keeps malformed LLM output (wrong types, hallucinated fields, invalid `status`) out of the service layer and returns a readable error the model can correct against. Dates stay as strings — `_parse_dt` owns ISO 8601 + timezone normalization.
+
 ## Idempotency
 
 `create_project` checks for an existing title before inserting; on concurrent race (TOCTOU), catches `IntegrityError` on commit, rolls back, and re-fetches the winner. Prevents duplicate projects when LLM retries after a cancelled tool result (mid-utterance interruption).
+
+`create_task` dedupes on `(title, project_id)` within an 8 s window per session via `SessionState.check_recent_create` / `record_create`. A retried create (same interruption scenario) returns the existing task with `deduped: true` instead of inserting a duplicate. Time-boxed rather than a unique constraint, because task titles legitimately repeat.
 
 ## Interruption handling
 
