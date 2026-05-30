@@ -98,7 +98,7 @@ Expected end state:
 - [x] LiveTranscript label says `You` (capital Y)
 - [x] ActionFeed labels: `Tool calling…`, `Tool completed`, `Project created`, etc. — consistent casing
 - [x] Dropdown items: `Rename` / `Delete` single-word, consistent across sidebar + task rows
-- [x] Section headers `PROJECTS` and `AGENT ACTIONS` uppercase via CSS
+- [x] Section headers `PROJECTS` and `ACTIVITY FEED` uppercase via CSS
 
 ---
 

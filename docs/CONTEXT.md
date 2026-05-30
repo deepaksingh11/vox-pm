@@ -53,4 +53,4 @@ Injected per session start, refreshed after each tool call AND at the start of e
 Three-pane Linear-style:
 - **Left sidebar**: project navigation, `+ New project` (muted, voice-first tooltip)
 - **Main pane**: task list for selected project, empty states push voice usage
-- **Right panel**: voice control (Start/End session, mute), live transcript, clarification prompt, agent actions feed, debug events panel (toggle with `D` header button)
+- **Right panel**: voice control (Start/End session, mute), live transcript, clarification prompt, reminder toast, activity feed (agent + manual mutations), debug events panel (toggle with `D` header button)

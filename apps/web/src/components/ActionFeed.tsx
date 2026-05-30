@@ -52,14 +52,14 @@ export function ActionFeed() {
   return (
     <div className="flex flex-col">
       <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 sticky top-0 bg-card py-1">
-        Agent Actions
+        Activity feed
       </h3>
       {actions.length === 0 ? (
         <div className="flex items-center justify-center h-32">
-          <p className="text-xs text-muted-foreground/50 text-center">Actions appear here as the agent works</p>
+          <p className="text-xs text-muted-foreground/50 text-center">Activity appears here as you or the agent make changes</p>
         </div>
       ) : (
-        <ul aria-live="polite" aria-label="Agent actions">
+        <ul aria-live="polite" aria-label="Activity feed">
           {actions.map((a) => (
             <ActionItem key={a.id} action={a} />
           ))}

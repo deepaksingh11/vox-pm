@@ -125,10 +125,10 @@ You can also create projects manually via **+ New project** in the sidebar (voic
 
 ## UI Features
 
-- **3-pane Linear-style layout**: sidebar (projects) | main (tasks) | right (voice + agent actions)
+- **3-pane Linear-style layout**: sidebar (projects) | main (tasks) | right (voice + activity feed)
 - **Voice-first**: sidebar prompts voice use; manual create/rename/delete as fallback
 - **Live transcript**: partial (italic) → final with `You` label
-- **Agent Actions feed**: every tool call logged with type, summary, timestamp
+- **Activity feed**: every mutation logged with type, summary, timestamp — agent tool calls *and* manual UI changes (REST mutations publish the same events, so the feed doubles as multi-tab activity)
 - **Reminder toast**: when a task's `reminder_at` comes due, a reminder fires over the WS and surfaces as an amber toast + action-feed entry
 - **Debug panel**: toggle with `D` button in header — shows raw WS events
 - **Manual actions**: checkbox to mark done, hover → delete/rename via dropdown
