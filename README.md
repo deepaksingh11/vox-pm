@@ -45,7 +45,7 @@ Two channels: **Daily WebRTC** for audio, **custom WebSocket** for all state eve
 
 - Python 3.12 + [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Node 22 + [pnpm](https://pnpm.io/installation)
-- API keys: Deepgram, Cartesia, Daily, Anthropic (or OpenAI/Gemini)
+- API keys: Deepgram, Daily, Anthropic (or OpenAI/Gemini)
 
 ### 1. Install
 
@@ -70,8 +70,6 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 # Voice
 DEEPGRAM_API_KEY=...
-CARTESIA_API_KEY=...
-CARTESIA_VOICE_ID=a0e99841-...
 
 # Daily.co (WebRTC rooms)
 DAILY_API_KEY=...
@@ -114,7 +112,7 @@ You can also create projects manually via **+ New project** in the sidebar (voic
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python 3.12, FastAPI, Pipecat 1.2+ |
-| Voice | Daily.co WebRTC, Deepgram STT (nova-3), Cartesia TTS |
+| Voice | Daily.co WebRTC (input only), Deepgram STT (nova-3) — text-only feedback, no TTS |
 | LLM | Claude Sonnet 4.6 (fallback: GPT-4o, Gemini — auto-detected from env) |
 | Database | Neon Postgres via SQLModel + asyncpg (direct connection, pool_size=10) |
 | Real-time | FastAPI WebSocket, asyncio in-process event bus |
@@ -164,7 +162,6 @@ fly secrets set \
   DATABASE_URL="postgresql+asyncpg://user:pass@ep-xxx.neon.tech/voxpm?sslmode=require" \
   ANTHROPIC_API_KEY="..." \
   DEEPGRAM_API_KEY="..." \
-  CARTESIA_API_KEY="..." \
   DAILY_API_KEY="..." \
   CORS_ORIGINS="https://your-vercel-domain.vercel.app"
 fly deploy
@@ -188,7 +185,7 @@ apps/
 ├── api/                          # FastAPI + Pipecat backend
 │   └── src/vox_pm/
 │       ├── agent/
-│       │   ├── pipeline.py       # Pipecat frame graph (VAD→STT→LLM→TTS)
+│       │   ├── pipeline.py       # Pipecat frame graph (VAD→STT→LLM, text-only out)
 │       │   ├── prompts.py        # System prompt + snapshot injection
 │       │   ├── tools.py          # Tool schema + dispatch (9 tools), arg validation + create dedupe
 │       │   ├── tool_args.py      # Per-tool pydantic validation models
@@ -236,10 +233,9 @@ pnpm --filter web typecheck   # TypeScript only
 1. **Deepgram** streams interim transcripts → `transcript.partial` events shown in UI as italic text
 2. On silence (300ms endpointing), final transcript triggers LLM turn
 3. **LLM** receives system prompt with today's date (UTC) + full workspace snapshot (P1/T1 aliases for reference resolution)
-4. LLM executes ALL required tool calls in sequence before producing any spoken response
+4. LLM executes ALL required tool calls in sequence — no spoken or written confirmation afterward; the UI update per tool call IS the feedback
 5. Each tool: args validated against a pydantic schema → references resolved → DB write → typed WS event published → React applies as reducer (optimistic update)
-6. **Cartesia TTS** plays confirmation audio after all tools complete
-7. `allow_interruptions=True` — user can speak mid-TTS to correct or continue. A barge-in cancels in-flight tools, so the dispatch is `asyncio.shield`-ed (the write still commits) and the system-prompt snapshot is refreshed at the start of every turn, reconciling any tool the framework marked `CANCELLED`.
+6. `allow_interruptions=True` — user can keep talking while tool calls are still executing to correct or continue. A barge-in cancels in-flight tools, so the dispatch is `asyncio.shield`-ed (the write still commits) and the system-prompt snapshot is refreshed at the start of every turn, reconciling any tool the framework marked `CANCELLED`.
 
 A background worker ([reminders.py](apps/api/src/vox_pm/reminders.py)) polls every 15s for tasks whose `reminder_at` has come due and fires a `reminder.fired` event over the WS (marked delivered only once a client receives it, so it survives reconnects).
 

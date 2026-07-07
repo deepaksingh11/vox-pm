@@ -18,7 +18,6 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.llm_service import FunctionCallParams
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
@@ -147,7 +146,9 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
         token,
         "Vox PM",
         DailyParams(
-            audio_out_enabled=True,
+            # Text-only feedback: the UI reflects every action live (ActionFeed),
+            # so the bot never speaks — no outbound audio track needed.
+            audio_out_enabled=False,
             audio_in_enabled=True,
             vad_analyzer=SileroVADAnalyzer(),
         ),
@@ -163,11 +164,6 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
             interim_results=True,
             endpointing=300,
         ),
-    )
-
-    tts = CartesiaTTSService(
-        api_key=settings.cartesia_api_key,
-        settings=CartesiaTTSService.Settings(voice=settings.cartesia_voice_id),
     )
 
     snapshot = await _get_context_snapshot(session_id)
@@ -187,7 +183,10 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
             _TranscriptPublisher(session_id, context, ctx_lock),
             context_pair.user(),
             llm,
-            tts,
+            # Text-only feedback: no TTS stage. ActionFeed + live UI updates ARE the
+            # confirmation the spec asks for; a spoken reply added nothing on top.
+            # transport.output() stays: harmless with no audio to send, and it's the
+            # stage that owns the outbound side of the Daily connection lifecycle.
             transport.output(),
             context_pair.assistant(),
         ]

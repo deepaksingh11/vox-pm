@@ -6,7 +6,6 @@
 |-----|-------------|
 | `ANTHROPIC_API_KEY` | console.anthropic.com |
 | `DEEPGRAM_API_KEY` | console.deepgram.com |
-| `CARTESIA_API_KEY` | play.cartesia.ai |
 | `DAILY_API_KEY` | dashboard.daily.co |
 | `DATABASE_URL` | Neon console → Connection string (use **direct** hostname, not pooler) |
 
@@ -63,10 +62,8 @@ OPENAI_API_KEY=sk-...
 GOOGLE_API_KEY=...
 # LLM_PROVIDERS=anthropic,gemini,openai   # default order
 
-# Voice pipeline
+# Voice pipeline (STT in; text-only feedback, no TTS out)
 DEEPGRAM_API_KEY=...
-CARTESIA_API_KEY=...
-CARTESIA_VOICE_ID=a0e99841-438c-4a64-b679-ae501e7d6091   # change if wanted
 
 DAILY_API_KEY=...
 
@@ -94,7 +91,6 @@ fly secrets set \
   DATABASE_URL="postgresql+asyncpg://..." \
   ANTHROPIC_API_KEY="..." \
   DEEPGRAM_API_KEY="..." \
-  CARTESIA_API_KEY="..." \
   DAILY_API_KEY="..." \
   CORS_ORIGINS="https://<vercel-domain>"
 fly deploy

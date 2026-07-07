@@ -29,6 +29,22 @@ export default function App() {
     void loadInitialState();
   }, [loadInitialState]);
 
+  // Safety net for a WS event lost during a rough disconnect (proxy hiccup, network
+  // blip) that never triggers a clean onopen reconnect: re-sync from REST whenever
+  // the tab regains focus/visibility. loadInitialState is a full-list merge, so this
+  // is idempotent and cheap even when nothing was actually missed.
+  useEffect(() => {
+    const resync = () => {
+      if (document.visibilityState === "visible") void loadInitialState();
+    };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    return () => {
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+    };
+  }, [loadInitialState]);
+
   useEventStream(clientId, applyEvent, loadInitialState);
 
   return (

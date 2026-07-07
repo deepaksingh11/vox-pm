@@ -17,9 +17,18 @@ export const clientId: string = _initClientId();
 
 const _clientHeaders = { "X-Client-Id": clientId };
 
+/** Carries the HTTP status so callers can branch on it (e.g. 409) without string-matching. */
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, statusText: string) {
+    super(`${status} ${statusText}`);
+    this.status = status;
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`, { headers: _clientHeaders });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) throw new HttpError(r.status, r.statusText);
   return r.json() as Promise<T>;
 }
 
@@ -31,7 +40,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
       : { ..._clientHeaders },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) throw new HttpError(r.status, r.statusText);
   return r.json() as Promise<T>;
 }
 
@@ -41,13 +50,13 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json", ..._clientHeaders },
     body: JSON.stringify(body),
   });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) throw new HttpError(r.status, r.statusText);
   return r.json() as Promise<T>;
 }
 
 async function del(path: string): Promise<void> {
   const r = await fetch(`${BASE}${path}`, { method: "DELETE", headers: _clientHeaders });
-  if (!r.ok && r.status !== 404) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok && r.status !== 404) throw new HttpError(r.status, r.statusText);
 }
 
 export const api = {

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     google_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5.4"  # "gpt-5.4-mini"
     gemini_model: str = "gemini-2.0-flash"
 
     @property
@@ -33,8 +33,6 @@ class Settings(BaseSettings):
 
     # Voice
     deepgram_api_key: str = ""
-    cartesia_api_key: str = ""
-    cartesia_voice_id: str = "a0e99841-438c-4a64-b679-ae501e7d6091"
     daily_api_key: str = ""
 
     @property

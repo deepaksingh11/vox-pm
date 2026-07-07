@@ -1,8 +1,24 @@
 import DailyIframe, { type DailyCall } from "@daily-co/daily-js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../lib/api";
+import { api, clientId, HttpError } from "../lib/api";
 import { useStore } from "./useStore";
 import type { VoiceSessionStatus } from "../lib/types";
+
+// A hard page refresh can tear down React before the unmount cleanup's async
+// DELETE /session call completes, leaving the backend's in-memory session
+// marked active. The next create then 409s forever — retry alone can't fix a
+// server-side stuck state. Self-heal: clear the stale session, then retry once.
+async function createSessionWithStaleRetry() {
+  try {
+    return await api.voice.createSession();
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 409) {
+      await api.voice.endSession(clientId).catch(() => {});
+      return await api.voice.createSession();
+    }
+    throw err;
+  }
+}
 
 export function usePipecatSession() {
   const [status, setStatus] = useState<VoiceSessionStatus>("idle");
@@ -57,7 +73,7 @@ export function usePipecatSession() {
         );
       }
 
-      const { session_id, room_url, token } = await api.voice.createSession();
+      const { session_id, room_url, token } = await createSessionWithStaleRetry();
       // Set ref immediately (before any await) so stop() can read it even if
       // the state flush hasn't propagated yet.
       sessionIdRef.current = session_id;
