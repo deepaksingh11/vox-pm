@@ -6,16 +6,16 @@ import type { ActionEntry } from "../lib/types";
 
 const typeConfig: Partial<Record<ActionEntry["type"], { dot: string; label: string }>> = {
   "tool.started": { dot: "bg-muted-foreground/50", label: "Tool calling…" },
-  "tool.completed": { dot: "bg-emerald-400", label: "Tool completed" },
-  "tool.failed": { dot: "bg-red-500", label: "Tool failed" },
-  "project.created": { dot: "bg-emerald-500", label: "Project created" },
-  "project.updated": { dot: "bg-sky-500", label: "Project updated" },
-  "project.deleted": { dot: "bg-red-500", label: "Project deleted" },
-  "task.created": { dot: "bg-emerald-500", label: "Task created" },
-  "task.updated": { dot: "bg-sky-500", label: "Task updated" },
-  "task.deleted": { dot: "bg-red-500", label: "Task deleted" },
-  "task.moved": { dot: "bg-amber-500", label: "Task moved" },
-  "clarification.ask": { dot: "bg-violet-500", label: "Clarification asked" },
+  "tool.completed": { dot: "bg-emerald-500 dark:bg-emerald-400", label: "Tool completed" },
+  "tool.failed": { dot: "bg-red-500 dark:bg-red-400", label: "Tool failed" },
+  "project.created": { dot: "bg-emerald-500 dark:bg-emerald-400", label: "Project created" },
+  "project.updated": { dot: "bg-sky-500 dark:bg-sky-400", label: "Project updated" },
+  "project.deleted": { dot: "bg-red-500 dark:bg-red-400", label: "Project deleted" },
+  "task.created": { dot: "bg-emerald-500 dark:bg-emerald-400", label: "Task created" },
+  "task.updated": { dot: "bg-sky-500 dark:bg-sky-400", label: "Task updated" },
+  "task.deleted": { dot: "bg-red-500 dark:bg-red-400", label: "Task deleted" },
+  "task.moved": { dot: "bg-amber-500 dark:bg-amber-400", label: "Task moved" },
+  "clarification.ask": { dot: "bg-violet-500 dark:bg-violet-400", label: "Clarification asked" },
 };
 
 // L3: tick so formatDistanceToNow updates without a full page re-render

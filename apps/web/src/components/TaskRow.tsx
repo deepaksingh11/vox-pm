@@ -25,12 +25,12 @@ interface Props {
 const STATUS_BADGE: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
   in_progress: {
     label: "In progress",
-    className: "text-blue-600 bg-blue-500/10",
+    className: "text-blue-600 dark:text-blue-400 bg-blue-500/10",
     icon: <Loader2 size={9} className="animate-spin" />,
   },
   blocked: {
     label: "Blocked",
-    className: "text-orange-600 bg-orange-500/10",
+    className: "text-orange-600 dark:text-orange-400 bg-orange-500/10",
     icon: <Ban size={9} />,
   },
   cancelled: {
@@ -44,9 +44,18 @@ export function TaskRow({ task }: Props) {
   const isDone = task.status === "done";
   const toggleTaskDone = useStore((s) => s.toggleTaskDone);
   const deleteTask = useStore((s) => s.deleteTask);
+  // Flash the row when the agent just created/updated/moved this task. Keyed by
+  // the mark timestamp so a rapid second change restarts the animation.
+  const changedAt = useStore((s) => s.recentlyChanged[task.id]);
 
   return (
-    <div className="flex items-start gap-3 px-5 py-3 transition-colors group hover:bg-muted/40">
+    <div
+      key={changedAt ?? "static"}
+      className={cn(
+        "flex items-start gap-3 px-5 py-3 transition-colors group hover:bg-muted/40",
+        changedAt !== undefined && "animate-row-flash"
+      )}
+    >
       <div className="shrink-0 mt-0.5 pt-px">
         <Checkbox
           checked={isDone}

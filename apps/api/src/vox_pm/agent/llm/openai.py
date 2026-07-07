@@ -10,6 +10,8 @@ def build(context: LLMContext, tool_handler, settings: Settings):
     llm = OpenAILLMService(
         api_key=settings.openai_api_key,
         model=settings.openai_model,
+        # Deterministic tool calling: entity titles/ids must come out identical run-to-run.
+        params=OpenAILLMService.InputParams(temperature=0.0),
     )
     for tool in TOOL_DEFINITIONS:
         llm.register_function(tool["name"], tool_handler)

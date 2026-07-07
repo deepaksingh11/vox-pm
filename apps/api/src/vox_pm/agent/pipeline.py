@@ -51,8 +51,20 @@ def _trim_context(context: LLMContext) -> None:
     msgs = context.messages
     if len(msgs) <= _MAX_CONTEXT_MESSAGES + 1:
         return
-    # Keep system message (index 0) + the most recent _MAX_CONTEXT_MESSAGES messages
-    del msgs[1 : len(msgs) - _MAX_CONTEXT_MESSAGES]
+    # Keep system message (index 0) + roughly the most recent _MAX_CONTEXT_MESSAGES
+    # messages — but never cut between an assistant "tool_calls" message and its
+    # role:"tool" results: providers require the pair intact (Anthropic 400s on an
+    # orphaned tool_result). A plain user message is always a safe cut boundary, so
+    # advance the cut point forward to the next one.
+    start = len(msgs) - _MAX_CONTEXT_MESSAGES
+    while start < len(msgs):
+        m = msgs[start]
+        if isinstance(m, dict) and m.get("role") == "user":
+            break
+        start += 1
+    if start >= len(msgs) or start <= 1:
+        return  # no safe boundary (or nothing to cut) — skip trimming this round
+    del msgs[1:start]
 
 
 async def refresh_system_prompt(
@@ -155,7 +167,7 @@ async def run_pipeline(session_id: str, room_url: str, token: str) -> None:
 
     tts = CartesiaTTSService(
         api_key=settings.cartesia_api_key,
-        voice_id=settings.cartesia_voice_id,
+        settings=CartesiaTTSService.Settings(voice=settings.cartesia_voice_id),
     )
 
     snapshot = await _get_context_snapshot(session_id)

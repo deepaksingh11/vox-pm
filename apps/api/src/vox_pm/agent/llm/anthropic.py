@@ -10,6 +10,8 @@ def build(context: LLMContext, tool_handler, settings: Settings):
     llm = AnthropicLLMService(
         api_key=settings.anthropic_api_key or "",  # factory guards key presence before build()
         model=settings.anthropic_model,
+        # Deterministic tool calling: entity titles/ids must come out identical run-to-run.
+        params=AnthropicLLMService.InputParams(temperature=0.0),
     )
     for tool in TOOL_DEFINITIONS:
         llm.register_function(tool["name"], tool_handler)

@@ -13,6 +13,8 @@ interface Store {
   clarification: { question: string; candidates: string[] } | null;
   reminderNotice: { task: Task } | null;
   selectedProjectId: string | null;
+  // Task ids the agent just touched (created/updated/moved) → drives the row flash.
+  recentlyChanged: Record<string, number>;
 
   loadInitialState: () => Promise<void>;
   applyEvent: (event: WSEvent) => void;
@@ -34,6 +36,28 @@ let _thinkingTimer: ReturnType<typeof setTimeout> | null = null;
 
 function _clearThinkingTimer() {
   if (_thinkingTimer) { clearTimeout(_thinkingTimer); _thinkingTimer = null; }
+}
+
+// One timer per flashed task id; re-marking restarts the flash window.
+const _flashTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const FLASH_MS = 2000;
+
+function markChanged(
+  recentlyChanged: Record<string, number>,
+  id: string,
+  set: (fn: (s: { recentlyChanged: Record<string, number> }) => { recentlyChanged: Record<string, number> }) => void,
+): Record<string, number> {
+  const prev = _flashTimers.get(id);
+  if (prev) clearTimeout(prev);
+  _flashTimers.set(id, setTimeout(() => {
+    _flashTimers.delete(id);
+    set((s) => {
+      const next = { ...s.recentlyChanged };
+      delete next[id];
+      return { recentlyChanged: next };
+    });
+  }, FLASH_MS));
+  return { ...recentlyChanged, [id]: performance.now() };
 }
 
 function summarize(event: WSEvent): string {
@@ -81,6 +105,7 @@ export const useStore = create<Store>((set, get) => ({
   clarification: null,
   reminderNotice: null,
   selectedProjectId: null,
+  recentlyChanged: {},
 
   loadInitialState: async () => {
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -261,6 +286,7 @@ export const useStore = create<Store>((set, get) => ({
             tasks: already ? s.tasks.map((x) => (x.id === t.id ? t : x)) : [...s.tasks, t],
             agentThinking: false,
             actions: addAction(s.actions, event),
+            recentlyChanged: markChanged(s.recentlyChanged, t.id, set),
           };
         });
         break;
@@ -273,6 +299,7 @@ export const useStore = create<Store>((set, get) => ({
           tasks: s.tasks.map((x) => (x.id === t.id ? t : x)),
           agentThinking: false,
           actions: addAction(s.actions, event),
+          recentlyChanged: markChanged(s.recentlyChanged, t.id, set),
         }));
         break;
       }
@@ -301,6 +328,7 @@ export const useStore = create<Store>((set, get) => ({
             tasks: s.tasks.map((x) => (x.id === t.id ? t : x)),
             agentThinking: false,
             actions: addAction(s.actions, event, movedSummary),
+            recentlyChanged: markChanged(s.recentlyChanged, t.id, set),
           };
         });
         break;

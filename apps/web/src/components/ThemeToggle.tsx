@@ -1,26 +1,47 @@
-import { Sun, Moon, Monitor } from "lucide-react";
+import { Sun, Moon, Monitor, Check } from "lucide-react";
 import type { ThemeMode } from "../hooks/useTheme";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Props {
   theme: ThemeMode;
   onSetTheme: (t: ThemeMode) => void;
 }
 
-const cycle: ThemeMode[] = ["light", "system", "dark"];
+const MODES: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
+  { mode: "light", label: "Light", icon: Sun },
+  { mode: "dark", label: "Dark", icon: Moon },
+  { mode: "system", label: "System", icon: Monitor },
+];
+
 const icons: Record<ThemeMode, typeof Sun> = { light: Sun, system: Monitor, dark: Moon };
-const labels: Record<ThemeMode, string> = { light: "Light", system: "System", dark: "Dark" };
 
 export function ThemeToggle({ theme, onSetTheme }: Props) {
   const Icon = icons[theme];
-  const next = cycle[(cycle.indexOf(theme) + 1) % cycle.length];
 
   return (
-    <button
-      onClick={() => onSetTheme(next)}
-      aria-label={`Theme: ${labels[theme]} — click to switch`}
-      className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-    >
-      <Icon size={15} />
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label="Change theme"
+          className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          <Icon size={15} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36">
+        {MODES.map(({ mode, label, icon: ItemIcon }) => (
+          <DropdownMenuItem key={mode} onClick={() => onSetTheme(mode)}>
+            <ItemIcon size={14} className="text-muted-foreground" />
+            {label}
+            {theme === mode && <Check size={14} className="ml-auto text-primary" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

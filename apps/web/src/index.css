@@ -33,6 +33,7 @@
 
   --animate-bar-bounce: bar-bounce 1s ease-in-out infinite;
   --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-row-flash: row-flash 2s ease-out;
 }
 
 /* Light (default) */
@@ -122,5 +123,18 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Row highlight when an entity was just created/updated/moved by the agent. */
+@keyframes row-flash {
+
+  0%,
+  40% {
+    background-color: color-mix(in oklch, var(--primary) 14%, transparent);
+  }
+
+  100% {
+    background-color: transparent;
   }
 }

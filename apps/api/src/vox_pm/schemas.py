@@ -1,9 +1,14 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 TaskStatus = Literal["open", "in_progress", "blocked", "cancelled", "done"]
+
+# Bounds shared by REST DTOs and LLM tool args: a title is a spoken phrase, not a
+# document — cap it before it reaches Postgres.
+TITLE_MAX = 200
+DESCRIPTION_MAX = 2000
 
 # --- REST response shapes ---
 
@@ -34,26 +39,26 @@ class TaskRead(BaseModel):
 
 
 class ProjectCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=TITLE_MAX)
 
 
 class ProjectUpdate(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX)
 
 
 class TaskCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=TITLE_MAX)
     project_id: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=DESCRIPTION_MAX)
     urgent: bool = False
     due_at: datetime | None = None
     reminder_at: datetime | None = None
 
 
 class TaskUpdate(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX)
     project_id: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=DESCRIPTION_MAX)
     urgent: bool | None = None
     due_at: datetime | None = None
     reminder_at: datetime | None = None

@@ -9,7 +9,8 @@ def build(context: LLMContext, tool_handler, settings: Settings):
     context.set_tools(TOOLS_SCHEMA)
     llm = GoogleLLMService(
         api_key=settings.google_api_key or "",  # factory guards key presence before build()
-        model=settings.gemini_model,
+        # Deterministic tool calling: entity titles/ids must come out identical run-to-run.
+        settings=GoogleLLMService.Settings(model=settings.gemini_model, temperature=0.0),
     )
     for tool in TOOL_DEFINITIONS:
         llm.register_function(tool["name"], tool_handler)

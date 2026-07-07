@@ -24,7 +24,7 @@ export function ReminderToast() {
       role="alert"
       aria-live="assertive"
     >
-      <Bell size={16} className="text-amber-500 shrink-0 mt-0.5" />
+      <Bell size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
           Reminder

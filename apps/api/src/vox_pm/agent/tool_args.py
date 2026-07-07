@@ -9,9 +9,9 @@ Dates stay as `str` here — `tools._parse_dt` owns ISO 8601 parsing + timezone
 normalization. These models enforce the type/enum contract, not date semantics.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from vox_pm.schemas import TaskStatus
+from vox_pm.schemas import DESCRIPTION_MAX, TITLE_MAX, TaskStatus
 
 
 class _StrictArgs(BaseModel):
@@ -20,12 +20,12 @@ class _StrictArgs(BaseModel):
 
 
 class CreateProjectArgs(_StrictArgs):
-    title: str
+    title: str = Field(min_length=1, max_length=TITLE_MAX)
 
 
 class UpdateProjectArgs(_StrictArgs):
     id: str
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX)
 
 
 class DeleteProjectArgs(_StrictArgs):
@@ -33,9 +33,9 @@ class DeleteProjectArgs(_StrictArgs):
 
 
 class CreateTaskArgs(_StrictArgs):
-    title: str
+    title: str = Field(min_length=1, max_length=TITLE_MAX)
     project_id: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=DESCRIPTION_MAX)
     urgent: bool = False
     due_at: str | None = None
     reminder_at: str | None = None
@@ -43,8 +43,8 @@ class CreateTaskArgs(_StrictArgs):
 
 class UpdateTaskArgs(_StrictArgs):
     id: str
-    title: str | None = None
-    description: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX)
+    description: str | None = Field(default=None, max_length=DESCRIPTION_MAX)
     urgent: bool | None = None
     due_at: str | None = None
     reminder_at: str | None = None
